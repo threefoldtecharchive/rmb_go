@@ -1,5 +1,12 @@
 package rmb
 
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/gorilla/mux"
+)
+
 type Message struct {
 	Version    int    `json:"ver"`
 	Id         string `json:"uid"`
@@ -34,20 +41,32 @@ type MBusCtx struct {
 	Subaddr      string
 }
 
-router := mux.NewRouter().StrictSlash(true)
-
-
 type App struct {
-	
+	debug     bool
+	substrate string
+	redis     string
+	twin      int
 }
 
+func (a *App) reply(w http.ResponseWriter, r *http.Request) {
+	if a.debug {
+		fmt.Println("[+] this is a debug message")
+	}
+	w.Write([]byte("hi"))
+}
 
+func (a *App) remote(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("hello"))
+}
 
-
-
-
-
-
-func main() {
-
+func Setup(router *mux.Router, debug bool, substrate string, redis string, twin int) {
+	a := App{
+		debug,
+		substrate,
+		redis,
+		twin,
+	}
+	router.HandleFunc("/reply", a.reply)
+	router.HandleFunc("/remote", a.remote)
+	http.Handle("/", router)
 }
