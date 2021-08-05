@@ -391,7 +391,7 @@ func (a *App) handle_scrubbing() error {
 			entry.Value.Expiration = 3600
 		}
 
-		if entry.Value.Epoch+entry.Value.Expiration > now {
+		if entry.Value.Epoch+entry.Value.Expiration < now {
 			log.Debug().Str("key", entry.Key).Msg("expired")
 
 			entry.Value.Err = fmt.Sprintf("request timeout (expiration reached, %d)", entry.Value.Expiration)
