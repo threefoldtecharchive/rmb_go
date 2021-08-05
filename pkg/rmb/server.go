@@ -20,7 +20,7 @@ type Message struct {
 	Version    int    `json:"ver"`
 	Id         string `json:"uid"`
 	Command    string `json:"cmd"`
-	Expiration int    `json:"exp"`
+	Expiration int64  `json:"exp"`
 	Retry      int    `json:"try"`
 	Data       string `json:"dat"`
 	Twin_src   int    `json:"src"`
@@ -103,13 +103,11 @@ func (a *App) resolve(twinId int) (string, error) {
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 	twinInfo := SubstrateTwin{}
 
 	if err := json.Unmarshal(body, &twinInfo); err != nil {
-		fmt.Println(err)
 		return "", errors.Wrap(err, "couldn't parse json response")
 	}
 
@@ -131,8 +129,7 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 		return err
 	}
 
-	idObj := a.redis.Incr(a.ctx, fmt.Sprintf("msgbus.counter.%d", dst))
-	id, err := idObj.Result()
+	id, err := a.redis.Incr(a.ctx, fmt.Sprintf("msgbus.counter.%d", dst)).Result()
 
 	if err != nil {
 		return err
@@ -157,9 +154,11 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 		return err
 	}
 
-	if a.debug {
-		fmt.Println("[+] message sent to target msgbus")
-		fmt.Println(resp)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Warn().Err(err).Msg("couldn't read response after sending to target msgbus")
+	} else {
+		log.Debug().Str("response", string(body)).Int("status", resp.StatusCode).Msg("message sent to target msgbus")
 	}
 
 	value, err := json.Marshal(msg)
@@ -190,10 +189,6 @@ func (a *App) handle_from_local(value string) error {
 		return errors.Wrap(err, "couldn't parse json")
 	}
 
-	if a.debug {
-		fmt.Println(msg)
-	}
-
 	if err := a.validate_input(msg); err != nil {
 		return errors.Wrap(err, "local: couldn't validate input")
 	}
@@ -205,7 +200,6 @@ func (a *App) handle_from_remote(value string) error {
 	msg := Message{}
 
 	if err := json.Unmarshal([]byte(value), &msg); err != nil {
-		fmt.Println(err)
 		return errors.Wrap(err, "couldn't parse json")
 	}
 
@@ -213,7 +207,7 @@ func (a *App) handle_from_remote(value string) error {
 		return errors.Wrap(err, "local: couldn't validate input")
 	}
 
-	fmt.Printf("[+] forwarding to local service: msgbus.%s\n" + msg.Command)
+	log.Info().Str("queue", fmt.Sprintf("msgbus.%s\n", msg.Command)).Msg("forwarding to local service")
 
 	// forward to local service
 	a.redis.LPush(a.ctx, fmt.Sprintf("msgbus.%s", msg.Command), value)
@@ -221,10 +215,10 @@ func (a *App) handle_from_remote(value string) error {
 }
 
 func (a *App) handle_from_reply_for_me(msg Message) error {
-	fmt.Println("[+] message reply for me, fetching backlog")
+	log.Info().Msg("message reply for me, fetching backlog")
 
-	retval := a.redis.HGet(a.ctx, "msgbus.system.backlog", msg.Id)
-	res, err := retval.Result()
+	retval, err := a.redis.HGet(a.ctx, "msgbus.system.backlog", msg.Id).Result()
+
 	if err == redis.Nil {
 		return errors.New(fmt.Sprintf("couldn't find key %s", msg.Id))
 	} else if err != nil {
@@ -232,7 +226,7 @@ func (a *App) handle_from_reply_for_me(msg Message) error {
 	}
 	original := Message{}
 
-	if err := json.Unmarshal([]byte(res), &original); err != nil {
+	if err := json.Unmarshal([]byte(retval), &original); err != nil {
 		return errors.Wrap(err, "couldn't parse json")
 	}
 	update := msg
@@ -257,13 +251,12 @@ func (a *App) handle_from_reply_forward(msg Message, value string) error {
 	// reply have only one destination (source)
 	dst := msg.Twin_dst[0]
 
-	fmt.Println("resolving twin: $dst")
 	dstIp, err := a.resolve(dst)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("[+] forwarding reply to $dest")
+	log.Info().Str("destination", dstIp).Msg("forwarding reply")
 
 	// forward to reply agent
 	_, err = http.Post(replyUrl(dstIp), "application/json", bytes.NewBuffer([]byte(value)))
@@ -276,13 +269,13 @@ func (a *App) handle_from_reply_forward(msg Message, value string) error {
 }
 
 func (a *App) request_needs_retry(msg Message, update Message) error {
-	fmt.Println("[-] could not send message to remote msgbus")
+	log.Info().Msg("could not send message to remote msgbus")
 
 	// restore 'update' to original state
 	update.Retqueue = msg.Retqueue
 
 	if update.Retry == 0 {
-		fmt.Println("[-] no more retry, replying with error")
+		log.Info().Msg("no more retry, replying with error")
 		update.Err = "could not send request and all retries done"
 		output, err := json.Marshal(update)
 		if err != nil {
@@ -291,8 +284,7 @@ func (a *App) request_needs_retry(msg Message, update Message) error {
 		a.redis.LPush(a.ctx, update.Retqueue, output)
 		return nil
 	}
-
-	fmt.Printf("[-] retry set to %d, adding to retry list", update.Retry)
+	log.Info().Int("retry", update.Retry).Msg("updating retry and adding to retry list")
 
 	// remove one retry
 	update.Retry -= 1
@@ -315,10 +307,6 @@ func (a *App) handle_from_reply(value string) error {
 		return errors.Wrap(err, "couldn't parse json")
 	}
 
-	if a.debug {
-		fmt.Println(msg)
-	}
-
 	if err := a.validate_input(msg); err != nil {
 		return errors.Wrap(err, "local: couldn't validate input")
 	}
@@ -333,26 +321,111 @@ func (a *App) handle_from_reply(value string) error {
 	return nil
 }
 
+func (a *App) handle_internal_hgetall(lines map[string]string) []HSetEntry {
+	entries := []HSetEntry{}
+
+	// build usable list from redis response
+	for key, value := range lines {
+		message := Message{}
+
+		if err := json.Unmarshal([]byte(value), &message); err != nil {
+			log.Error().Err(errors.Wrap(err, "couldn't parse json")).Msg("handling retry queue")
+			continue
+		}
+
+		entries = append(entries, HSetEntry{
+			Key:   key,
+			Value: message,
+		})
+	}
+
+	return entries
+}
+
+func (a *App) handle_retry() error {
+	log.Debug().Msg("checking retries")
+
+	lines, err := a.redis.HGetAll(a.ctx, "msgbus.system.retry").Result()
+
+	if err != nil {
+		return errors.Wrap(err, "couldn't read retry messages")
+	}
+
+	entries := a.handle_internal_hgetall(lines)
+
+	now := time.Now().Unix()
+
+	// iterate over each entries
+	for _, entry := range entries {
+		if now > entry.Value.Epoch+5 { // 5 sec debug
+			log.Info().Str("key", entry.Key).Msg("retry needed")
+
+			// remove from retry list
+			a.redis.HDel(a.ctx, "msgbus.system.retry", entry.Key)
+
+			// re-call sending function, which will succeed
+			// or put it back to retry
+			a.handle_from_local_prepare_item(entry.Value, entry.Value.Twin_dst[0])
+		}
+	}
+	return nil
+}
+
+func (a *App) handle_scrubbing() error {
+	log.Debug().Msg("scrubbing")
+
+	lines, err := a.redis.HGetAll(a.ctx, "msgbus.system.backlog").Result()
+
+	if err != nil {
+		return errors.Wrap(err, "couldn't read backlog messages")
+	}
+
+	entries := a.handle_internal_hgetall(lines)
+
+	now := time.Now().Unix()
+
+	// iterate over each entries
+	for _, entry := range entries {
+		if entry.Value.Expiration == 0 {
+			// avoid infinite expiration, fallback to 1h
+			entry.Value.Expiration = 3600
+		}
+
+		if entry.Value.Epoch+entry.Value.Expiration > now {
+			log.Debug().Str("key", entry.Key).Msg("expired")
+
+			entry.Value.Err = fmt.Sprintf("request timeout (expiration reached, %d)", entry.Value.Expiration)
+			output, err := json.Marshal(entry.Value)
+			if err != nil {
+				log.Error().Err(err).Msg("couldn't parse json")
+				continue
+			}
+			a.redis.LPush(a.ctx, entry.Value.Retqueue, output)
+			a.redis.HDel(a.ctx, "msgbus.system.backlog", entry.Key)
+		}
+	}
+	return nil
+}
+
 func (a *App) run_server() {
-	fmt.Printf("[+] twin id: %d\n", a.twin)
+	log.Info().Int("twin", a.twin).Msg("initializing agent server")
 
-	fmt.Println("[+] initializing agent server")
 	for {
-		m := a.redis.BLPop(a.ctx, 0, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply")
-		// can len be 0?
+		res, err := a.redis.BLPop(a.ctx, 1000000000, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
 
-		res, err := m.Result()
-		if err != nil {
-			fmt.Println(errors.Wrap(err, "error blpop"))
+		if err == redis.Nil {
+			a.handle_retry()
+			a.handle_scrubbing()
+			continue
+		} else if err != nil {
+			log.Error().Err(err).Msg("error fetching messages from redis")
+			continue
 		}
 
-		if a.debug {
-			fmt.Printf("[+] queue: %s\n[+] message: %s", res[0], res[1])
-		}
+		log.Debug().Str("queue", res[0]).Str("message", res[1]).Msg("found a redis payload")
 
 		if res[0] == "msgbus.system.reply" {
 			if err := a.handle_from_reply(res[1]); err != nil {
-				fmt.Println("reply error")
 				log.Err(err).Msg("handle_from_reply")
 			}
 		}
@@ -375,10 +448,8 @@ func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 		w.Write(errorReply("couldn't read body"))
 		return
 	}
-	if a.debug {
-		fmt.Println("[+] request from external agent")
-		fmt.Println(string(body))
-	}
+
+	log.Debug().Str("request_body", string(body)).Msg("request from external agent")
 
 	msg := Message{}
 
@@ -387,7 +458,13 @@ func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// locking?
-	a.redis.LPush(a.ctx, "msgbus.system.remote", body)
+	_, err = a.redis.LPush(a.ctx, "msgbus.system.remote", body).Result()
+
+	if err != nil {
+		err = errors.Wrap(err, "couldn't push entry to reply queue")
+		w.Write(errorReply(err.Error()))
+	}
+
 	w.Write(successReply())
 
 }
@@ -398,10 +475,7 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 		w.Write(errorReply("couldn't read body"))
 		return
 	}
-	if a.debug {
-		fmt.Println("[+] request from external agent")
-		fmt.Println(body)
-	}
+	log.Debug().Str("request_body", string(body)).Msg("request from external agent")
 
 	msg := Message{}
 
@@ -410,7 +484,11 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// locking?
-	a.redis.LPush(a.ctx, "msgbus.system.reply", body)
+	_, err = a.redis.LPush(a.ctx, "msgbus.system.reply", body).Result()
+	if err != nil {
+		err = errors.Wrap(err, "couldn't push entry to reply queue")
+		w.Write(errorReply(err.Error()))
+	}
 	w.Write(successReply())
 
 }
