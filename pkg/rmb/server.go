@@ -142,7 +142,7 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	resp, err := http.Post(remoteUrl(dstIp), "application/json", bytes.NewBuffer(output))
 
 	if err != nil {
-		// TODO: retry
+		a.request_needs_retry(msg, update)
 		return err
 	}
 
@@ -202,12 +202,36 @@ func (a *App) handle_from_remote(value string) error {
 		return errors.Wrap(err, "local: couldn't validate input")
 	}
 
-	fmt.println("[+] forwarding to local service: msgbus." + msg.Command)
+	fmt.Println("[+] forwarding to local service: msgbus." + msg.Command)
 
 	// forward to local service
 	a.redis.LPush(a.ctx, fmt.Sprintf("msgbus.%s", msg.Command), value)
 
 	return nil
+}
+
+func (a *App) request_needs_retry(msg Message, update Message) error {
+	fmt.Println("[-] could not send message to remote msgbus")
+
+	// restore 'update' to original state
+	update.Retqueue = msg.Retqueue
+
+	if update.Retry == 0 {
+		fmt.Println("[-] no more retry, replying with error")
+		update.Err = "could not send request and all retries done"
+		output := json.Marshal(update)
+		a.redis.LPush(update.Retqueue, output)
+		return nil
+	}
+
+	fmt.Printf("[-] retry set to %d, adding to retry list", update.Retry)
+
+	// remove one retry
+	update.Retry -= 1
+	update.Epoch = time.now().Unix()
+
+	value := join.Marshal(update)
+	a.redis.HSet(a.ctx, "msgbus.system.retry", update.id, value)?
 }
 
 func (a *App) handle_from_reply(value string) error {
