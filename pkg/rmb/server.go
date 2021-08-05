@@ -119,9 +119,7 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	update.Twin_src = a.twin
 	update.Twin_dst = []int{dst}
 
-	if a.debug {
-		fmt.Printf("[+] resolving twin: %d\n", dst)
-	}
+	log.Debug().Int("twin", dst).Msg("resolving twin: %d")
 
 	dstIp, err := a.resolve(dst)
 
@@ -138,9 +136,7 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	update.Id = fmt.Sprintf("%d.%d", dst, id)
 	update.Retqueue = "msgbus.system.reply"
 
-	if a.debug {
-		fmt.Printf("[+] forwarding to %s\n", dstIp)
-	}
+	log.Debug().Str("destination_ip", dstIp).Msg("forwarding")
 
 	output, err := json.Marshal(update)
 	if err != nil {
@@ -207,7 +203,7 @@ func (a *App) handle_from_remote(value string) error {
 		return errors.Wrap(err, "local: couldn't validate input")
 	}
 
-	log.Info().Str("queue", fmt.Sprintf("msgbus.%s\n", msg.Command)).Msg("forwarding to local service")
+	log.Info().Str("queue", fmt.Sprintf("msgbus.%s", msg.Command)).Msg("forwarding to local service")
 
 	// forward to local service
 	a.redis.LPush(a.ctx, fmt.Sprintf("msgbus.%s", msg.Command), value)
