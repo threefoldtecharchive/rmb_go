@@ -57,6 +57,6 @@ func createServer(f flags) (*http.Server, error) {
 	rmb.Setup(router, debug, substrate, redis, twin)
 	return &http.Server{
 		Handler: router,
-		Addr:    "0.0.0.0:8000",
+		Addr:    "0.0.0.0:8051",
 	}, nil
 }
