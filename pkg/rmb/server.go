@@ -36,7 +36,7 @@ type HSetEntry struct {
 
 type SubstrateTwin struct {
 	Version int    `json:"version"`
-	Id      int    `json:"iD"`
+	Id      int    `json:"id"`
 	Account string `json:"account"`
 	Ip      string `json:"ip"`
 }
@@ -142,6 +142,7 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	resp, err := http.Post(remoteUrl(dstIp), "application/json", bytes.NewBuffer(output))
 
 	if err != nil {
+		// TODO: retry
 		return err
 	}
 
@@ -189,6 +190,26 @@ func (a *App) handle_from_local(value string) error {
 	return a.handle_from_local_prepare(msg)
 }
 
+func (a *App) handle_from_remote(value string) error {
+	msg := Message{}
+
+	if err := json.Unmarshal([]byte(value), &msg); err != nil {
+		fmt.Println(err)
+		return errors.Wrap(err, "couldn't parse json")
+	}
+
+	if err := a.validate_input(msg); err != nil {
+		return errors.Wrap(err, "local: couldn't validate input")
+	}
+
+	fmt.println("[+] forwarding to local service: msgbus." + msg.Command)
+
+	// forward to local service
+	a.redis.LPush(a.ctx, fmt.Sprintf("msgbus.%s", msg.Command), value)
+
+	return nil
+}
+
 func (a *App) handle_from_reply(value string) error {
 	msg := Message{}
 
@@ -211,6 +232,8 @@ func (a *App) handle_from_reply(value string) error {
 	} else if msg.twin_src == config.myid {
 		handle_from_reply_forward(msg, r, config, value)
 	}
+
+	return nil
 }
 
 func (a *App) run_server() {
