@@ -49,9 +49,8 @@ type MBusCtx struct {
 }
 
 type App struct {
-	debug     bool
-	substrate string
-	redis     BackendInterface
+	debug bool
+	redis BackendInterface
 	// what is ctx
 	ctx      context.Context
 	twin     int
@@ -109,7 +108,6 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	if err != nil {
 		return errors.Wrap(err, "couldn't get twin ip")
 	}
-
 	err = c.SendRemote(output)
 
 	if err != nil {
@@ -456,11 +454,10 @@ func Setup(router *mux.Router, debug bool, substrate string, redisServer string,
 	})
 	backend := RedisBackend{client: rdb}
 	a := App{
-		debug:     debug,
-		substrate: substrate,
-		redis:     backend,
-		twin:      twin,
-		ctx:       context.Background(),
+		debug: debug,
+		redis: backend,
+		twin:  twin,
+		ctx:   context.Background(),
 		resolver: TwinExplorerResolver{
 			substrate: substrate,
 		},

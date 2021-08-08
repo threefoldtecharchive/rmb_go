@@ -64,12 +64,12 @@ func (r TwinExplorerResolver) Resolve(twinId int) (TwinCommunicationChannelInter
 
 	log.Debug().Str("ip", twinInfo.Ip).Msg("resolved twin ip")
 
-	return TwinCommunicationChannel{
+	return &TwinCommunicationChannel{
 		dstIp: twinInfo.Ip,
 	}, nil
 }
 
-func (c TwinCommunicationChannel) SendRemote(data []byte) error {
+func (c *TwinCommunicationChannel) SendRemote(data []byte) error {
 	resp, err := http.Post(remoteUrl(c.dstIp), "application/json", bytes.NewBuffer(data))
 	// check on response for non-communication errors?
 
@@ -82,7 +82,7 @@ func (c TwinCommunicationChannel) SendRemote(data []byte) error {
 	return err
 }
 
-func (c TwinCommunicationChannel) SendReply(data []byte) error {
+func (c *TwinCommunicationChannel) SendReply(data []byte) error {
 	resp, err := http.Post(replyUrl(c.dstIp), "application/json", bytes.NewBuffer(data))
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {

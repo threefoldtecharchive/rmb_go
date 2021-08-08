@@ -2,10 +2,15 @@ package rmb
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"testing"
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/pkg/errors"
+	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+	"github.com/stretchr/testify/assert"
 )
 
 type BackendMock struct {
@@ -26,11 +31,11 @@ func NewBackendMock() BackendMock {
 func (r BackendMock) HGet(ctx context.Context, key string, field string) (string, error) {
 	i, ok := r.dicts[key]
 	if ok == false {
-		return "", errors.New("couldn't find key")
+		i = make(map[string]string)
 	}
 	v, ok := i[field]
 	if ok == false {
-		return "", errors.New("field not found in key")
+		v = ""
 	}
 	return v, nil
 }
@@ -38,7 +43,7 @@ func (r BackendMock) HGet(ctx context.Context, key string, field string) (string
 func (r BackendMock) HGetAll(ctx context.Context, key string) (map[string]string, error) {
 	i, ok := r.dicts[key]
 	if ok == false {
-		return nil, errors.New("couldn't find key")
+		i = make(map[string]string)
 	}
 
 	return i, nil
@@ -47,7 +52,7 @@ func (r BackendMock) HGetAll(ctx context.Context, key string) (map[string]string
 func (r BackendMock) HDel(ctx context.Context, key string, field string) (int64, error) { // int8
 	i, ok := r.dicts[key]
 	if ok == false {
-		return 0, errors.New("couldn't find key")
+		return 1, nil
 	}
 
 	_, ok = i[field]
@@ -85,20 +90,112 @@ func (r BackendMock) BLPop(ctx context.Context, timeout time.Duration, keys ...s
 }
 
 func (r BackendMock) Incr(ctx context.Context, key string) (int64, error) {
-	i, ok := r.ints[key]
+	_, ok := r.ints[key]
 	if ok == false {
-		return 0, errors.New(fmt.sprintf("couldn't find key %s", key)
+		r.ints[key] = 0
 	}
 	r.ints[key] += 1
 	return r.ints[key], nil
 }
 
 func (r BackendMock) HSet(ctx context.Context, key string, field string, value []byte) (int64, error) {
-	i, ok := r.dicts[key]
+	_, ok := r.dicts[key]
 	if ok == false {
-		return 0, errors.New(fmt.sprintf("couldn't find key %s", key)
+		r.dicts[key] = make(map[string]string)
 	}
 
-	r.dicts[key][field] = value
+	r.dicts[key][field] = string(value)
 	return 1, nil
+}
+
+type ResolverMock struct {
+	twin map[int]*TwinCommunicationMock
+}
+
+func NewResolverMock() ResolverMock {
+	r := ResolverMock{
+		twin: make(map[int]*TwinCommunicationMock),
+	}
+	return r
+}
+
+type TwinCommunicationMock struct {
+	remote [][]byte
+	reply  [][]byte
+	twinId int
+}
+
+func (r ResolverMock) Resolve(twinId int) (TwinCommunicationChannelInterace, error) {
+	log.Debug().Int("twin", twinId).Msg("resolving mock twinId")
+	e, ok := r.twin[twinId]
+	if ok == false {
+		e = &TwinCommunicationMock{
+			twinId: twinId,
+			remote: make([][]byte, 0),
+			reply:  make([][]byte, 0),
+		}
+		r.twin[twinId] = e
+	}
+	return e, nil
+}
+
+func (c *TwinCommunicationMock) SendRemote(data []byte) error {
+	c.remote = append(c.remote, data)
+	return nil
+}
+
+func (c *TwinCommunicationMock) SendReply(data []byte) error {
+	c.reply = append(c.reply, data)
+	return nil
+}
+func (c *TwinCommunicationMock) PopRemote() []byte {
+	last := c.remote[len(c.remote)-1]
+	c.remote = c.remote[:len(c.remote)-1]
+	return last
+}
+
+func (c *TwinCommunicationMock) PopReply() []byte {
+	last := c.reply[len(c.reply)-1]
+	c.reply = c.reply[:len(c.reply)-1]
+	return last
+}
+func TestHandleFromLocalPrepareItem(t *testing.T) {
+	backend := NewBackendMock()
+	resolver := NewResolverMock()
+	app := App{
+		debug:    true,
+		redis:    backend,
+		twin:     1,
+		ctx:      context.Background(),
+		resolver: resolver,
+	}
+	secondTwin, _ := resolver.Resolve(2)
+	secondTwinMock := secondTwin.(*TwinCommunicationMock)
+	msg := Message{
+		Version:    1,
+		Id:         "",
+		Command:    "griddb.twins.get",
+		Expiration: 0,
+		Retry:      2,
+		Data:       base64.StdEncoding.EncodeToString([]byte("2")),
+		Twin_src:   0,
+		Twin_dst:   []int{2},
+		Retqueue:   uuid.New().String(),
+		Schema:     "",
+		Epoch:      time.Now().Unix(),
+		Err:        "",
+	}
+	err := app.handle_from_local_prepare_item(msg, 2)
+	if err != nil {
+		log.Err(err).Msg("error while handling from local perpare item")
+	}
+	log.Debug().Int("len_twin_remote_2:", len(secondTwinMock.remote)).Int("len_twin_reply_2:", len(secondTwinMock.reply)).Msg("queue data")
+	received := secondTwinMock.PopRemote()
+	recmsg := Message{}
+	json.Unmarshal(received, &recmsg)
+	assert.Equal(t, recmsg.Retqueue, "msgbus.system.reply")
+	assert.Equal(t, recmsg.Epoch, msg.Epoch)
+	assert.Equal(t, recmsg.Command, msg.Command)
+	assert.Equal(t, recmsg.Retry, msg.Retry)
+	assert.Equal(t, recmsg.Data, msg.Data)
 }
