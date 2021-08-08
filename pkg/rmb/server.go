@@ -1,11 +1,9 @@
 package rmb
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -53,18 +51,11 @@ type MBusCtx struct {
 type App struct {
 	debug     bool
 	substrate string
-	redis     *redis.Client
+	redis     BackendInterface
 	// what is ctx
-	ctx  context.Context
-	twin int
-}
-
-func remoteUrl(twinIp string) string {
-	return fmt.Sprintf("http://%s:8051/zbus-remote", twinIp)
-}
-
-func replyUrl(twinIp string) string {
-	return fmt.Sprintf("http://%s:8051/zbus-reply", twinIp)
+	ctx      context.Context
+	twin     int
+	resolver TwinResolverInterface
 }
 
 func errorReply(message string) []byte {
@@ -94,40 +85,12 @@ func (a *App) validate_input(msg Message) error {
 	return nil
 }
 
-func (a *App) resolve(twinId int) (string, error) {
-	url := fmt.Sprintf("%s/twin/%d", a.substrate, twinId)
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", nil
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	twinInfo := SubstrateTwin{}
-
-	if err := json.Unmarshal(body, &twinInfo); err != nil {
-		return "", errors.Wrap(err, "couldn't parse json response")
-	}
-
-	return twinInfo.Ip, nil
-}
-
 func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	update := msg
 	update.Twin_src = a.twin
 	update.Twin_dst = []int{dst}
 
-	log.Debug().Int("twin", dst).Msg("resolving twin: %d")
-
-	dstIp, err := a.resolve(dst)
-
-	if err != nil {
-		return err
-	}
-
-	id, err := a.redis.Incr(a.ctx, fmt.Sprintf("msgbus.counter.%d", dst)).Result()
+	id, err := a.redis.Incr(a.ctx, fmt.Sprintf("msgbus.counter.%d", dst))
 
 	if err != nil {
 		return err
@@ -136,32 +99,29 @@ func (a *App) handle_from_local_prepare_item(msg Message, dst int) error {
 	update.Id = fmt.Sprintf("%d.%d", dst, id)
 	update.Retqueue = "msgbus.system.reply"
 
-	log.Debug().Str("destination_ip", dstIp).Msg("forwarding")
-
 	output, err := json.Marshal(update)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.Post(remoteUrl(dstIp), "application/json", bytes.NewBuffer(output))
+	c, err := a.resolver.Resolve(dst)
+
+	if err != nil {
+		return errors.Wrap(err, "couldn't get twin ip")
+	}
+
+	err = c.SendRemote(output)
 
 	if err != nil {
 		a.request_needs_retry(msg, update)
 		return err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Warn().Err(err).Msg("couldn't read response after sending to target msgbus")
-	} else {
-		log.Debug().Str("response", string(body)).Int("status", resp.StatusCode).Msg("message sent to target msgbus")
-	}
-
 	value, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	_, err = a.redis.HSet(a.ctx, "msgbus.system.backlog", update.Id, value).Result()
+	_, err = a.redis.HSet(a.ctx, "msgbus.system.backlog", update.Id, value)
 	if err != nil {
 		return err
 	}
@@ -206,14 +166,14 @@ func (a *App) handle_from_remote(value string) error {
 	log.Info().Str("queue", fmt.Sprintf("msgbus.%s", msg.Command)).Msg("forwarding to local service")
 
 	// forward to local service
-	a.redis.LPush(a.ctx, fmt.Sprintf("msgbus.%s", msg.Command), value)
+	a.redis.LPush(a.ctx, fmt.Sprintf("msgbus.%s", msg.Command), []byte(value))
 	return nil
 }
 
 func (a *App) handle_from_reply_for_me(msg Message) error {
 	log.Info().Msg("message reply for me, fetching backlog")
 
-	retval, err := a.redis.HGet(a.ctx, "msgbus.system.backlog", msg.Id).Result()
+	retval, err := a.redis.HGet(a.ctx, "msgbus.system.backlog", msg.Id)
 
 	if err == redis.Nil {
 		return errors.New(fmt.Sprintf("couldn't find key %s", msg.Id))
@@ -247,15 +207,14 @@ func (a *App) handle_from_reply_forward(msg Message, value string) error {
 	// reply have only one destination (source)
 	dst := msg.Twin_dst[0]
 
-	dstIp, err := a.resolve(dst)
+	r, err := a.resolver.Resolve(dst)
+
 	if err != nil {
-		return err
+		return errors.Wrap(err, "couldn't resolve twin ip")
 	}
 
-	log.Info().Str("destination", dstIp).Msg("forwarding reply")
-
 	// forward to reply agent
-	_, err = http.Post(replyUrl(dstIp), "application/json", bytes.NewBuffer([]byte(value)))
+	err = r.SendReply([]byte(value))
 
 	if err != nil {
 		return err
@@ -341,7 +300,7 @@ func (a *App) handle_internal_hgetall(lines map[string]string) []HSetEntry {
 func (a *App) handle_retry() error {
 	log.Debug().Msg("checking retries")
 
-	lines, err := a.redis.HGetAll(a.ctx, "msgbus.system.retry").Result()
+	lines, err := a.redis.HGetAll(a.ctx, "msgbus.system.retry")
 
 	if err != nil {
 		return errors.Wrap(err, "couldn't read retry messages")
@@ -370,7 +329,7 @@ func (a *App) handle_retry() error {
 func (a *App) handle_scrubbing() error {
 	log.Debug().Msg("scrubbing")
 
-	lines, err := a.redis.HGetAll(a.ctx, "msgbus.system.backlog").Result()
+	lines, err := a.redis.HGetAll(a.ctx, "msgbus.system.backlog")
 
 	if err != nil {
 		return errors.Wrap(err, "couldn't read backlog messages")
@@ -407,7 +366,7 @@ func (a *App) run_server() {
 	log.Info().Int("twin", a.twin).Msg("initializing agent server")
 
 	for {
-		res, err := a.redis.BLPop(a.ctx, 1000000000, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
+		res, err := a.redis.BLPop(a.ctx, 1000000000, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply")
 
 		if err == redis.Nil {
 			a.handle_retry()
@@ -454,7 +413,7 @@ func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// locking?
-	_, err = a.redis.LPush(a.ctx, "msgbus.system.remote", body).Result()
+	_, err = a.redis.LPush(a.ctx, "msgbus.system.remote", body)
 
 	if err != nil {
 		err = errors.Wrap(err, "couldn't push entry to reply queue")
@@ -480,7 +439,7 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// locking?
-	_, err = a.redis.LPush(a.ctx, "msgbus.system.reply", body).Result()
+	_, err = a.redis.LPush(a.ctx, "msgbus.system.reply", body)
 	if err != nil {
 		err = errors.Wrap(err, "couldn't push entry to reply queue")
 		w.Write(errorReply(err.Error()))
@@ -495,12 +454,16 @@ func Setup(router *mux.Router, debug bool, substrate string, redisServer string,
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
+	backend := RedisBackend{client: rdb}
 	a := App{
 		debug:     debug,
 		substrate: substrate,
-		redis:     rdb,
+		redis:     backend,
 		twin:      twin,
 		ctx:       context.Background(),
+		resolver: TwinExplorerResolver{
+			substrate: substrate,
+		},
 	}
 	go a.run_server()
 	router.HandleFunc("/zbus-reply", a.reply)
