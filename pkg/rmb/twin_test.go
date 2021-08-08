@@ -15,8 +15,8 @@ func TestResolveTwinIp(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if r.(TwinCommunicationChannel).dstIp != "192.168.0.154" {
-		t.Errorf("expected 192.168.0.154 found %s", r.(TwinCommunicationChannel).dstIp)
+	if r.(*TwinCommunicationChannel).dstIp != "192.168.0.154" {
+		t.Errorf("expected 192.168.0.154 found %s", r.(*TwinCommunicationChannel).dstIp)
 	}
 }
 
