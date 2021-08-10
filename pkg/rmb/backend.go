@@ -46,5 +46,5 @@ func (r RedisBackend) Incr(ctx context.Context, key string) (int64, error) {
 }
 
 func (r RedisBackend) HSet(ctx context.Context, key string, field string, value []byte) (int64, error) {
-	return r.client.HSet(ctx, key, value).Result()
+	return r.client.HSet(ctx, key, field, value).Result()
 }
