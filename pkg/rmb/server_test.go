@@ -175,7 +175,7 @@ func (c *TwinCommunicationMock) PopReply() []byte {
 	c.reply = c.reply[:len(c.reply)-1]
 	return last
 }
-func TestHandleFromLocalPrepareItem(t *testing.T) {
+func setup() (a App, s BackendMock, r ResolverMock) {
 	backend := NewBackendMock()
 	resolver := NewResolverMock()
 	app := App{
@@ -185,6 +185,12 @@ func TestHandleFromLocalPrepareItem(t *testing.T) {
 		ctx:      context.Background(),
 		resolver: resolver,
 	}
+
+	return app, *backend, resolver
+}
+
+func TestHandleFromLocalPrepareItem(t *testing.T) {
+	app, _, resolver := setup()
 	secondTwin, _ := resolver.Resolve(2)
 	secondTwinMock := secondTwin.(*TwinCommunicationMock)
 	msg := Message{
@@ -217,15 +223,7 @@ func TestHandleFromLocalPrepareItem(t *testing.T) {
 }
 
 func TestHandleFromLocal(t *testing.T) {
-	backend := NewBackendMock()
-	resolver := NewResolverMock()
-	app := App{
-		debug:    true,
-		redis:    backend,
-		twin:     1,
-		ctx:      context.Background(),
-		resolver: resolver,
-	}
+	app, _, resolver := setup()
 	secondTwin, _ := resolver.Resolve(2)
 	secondTwinMock := secondTwin.(*TwinCommunicationMock)
 	fourthTwin, _ := resolver.Resolve(4)
@@ -271,15 +269,7 @@ func TestHandleFromLocal(t *testing.T) {
 }
 
 func TestHandleFromRemote(t *testing.T) {
-	backend := NewBackendMock()
-	resolver := NewResolverMock()
-	app := App{
-		debug:    true,
-		redis:    backend,
-		twin:     1,
-		ctx:      context.Background(),
-		resolver: resolver,
-	}
+	app, backend, _ := setup()
 	msg := Message{
 		Version:    1,
 		Id:         "",
@@ -319,18 +309,10 @@ func TestHandleFromReplyForMe(t *testing.T) {
 			 * 5. the message is deleted from the backlog
 	*/
 
-	backend := NewBackendMock()
-	resolver := NewResolverMock()
-	app := App{
-		debug:    true,
-		redis:    backend,
-		twin:     1,
-		ctx:      context.Background(),
-		resolver: resolver,
-	}
+	app, backend, _ := setup()
 	msg := Message{
 		Version:    1,
-		Id:         "13.12",
+		Id:         "9.7",
 		Command:    "griddb.twins.get",
 		Expiration: 0,
 		Retry:      2,
@@ -349,8 +331,9 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("error while parsing json")
 	}
-	backend.HSet(app.ctx, "msgbus.system.backlog", msg.Id, updateString)
-	err = app.handle_from_reply_for_me(msg)
+	msgString, err := json.Marshal(msg)
+	backend.HSet(app.ctx, "msgbus.system.backlog", msg.Id, msgString)
+	err = app.handle_from_reply_for_me(update)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
