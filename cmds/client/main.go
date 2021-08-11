@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dmahmouali/rmb-go/pkg/client"
 	"github.com/go-redis/redis/v8"
+	"github.com/threefoldtech/rmb-go/pkg/client"
 )
 
 func test_client() {
