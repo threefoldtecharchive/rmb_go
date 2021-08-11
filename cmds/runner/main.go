@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dmahmouali/rmb-go/pkg/rmb"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/threefoldtech/rmb-go/pkg/rmb"
 )
 
 type flags struct {

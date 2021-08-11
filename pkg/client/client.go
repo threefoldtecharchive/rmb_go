@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/dmahmouali/rmb-go/pkg/rmb"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"github.com/threefoldtech/rmb-go/pkg/rmb"
 )
 
 type MessageBusClient struct {
