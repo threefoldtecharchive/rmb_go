@@ -19,7 +19,7 @@ func test_client() {
 		Ctx:    context.Background(),
 	}
 
-	msg_twin := client.Prepare("griddb.twins.get", []int{9}, 0, 2)
+	msg_twin := client.Prepare("griddb.twins.get", []int{1}, 0, 2)
 	mb.Send(msg_twin, "9")
 	response_twin := mb.Read(msg_twin)
 	fmt.Println(fmt.Sprintf("Result Received for reply:%s", msg_twin.Retqueue))
