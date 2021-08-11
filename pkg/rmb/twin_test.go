@@ -9,7 +9,7 @@ import (
 
 func TestResolveTwinIp(t *testing.T) {
 	resolver := TwinExplorerResolver{
-		substrate: "https://explorer.devnet.grid.tf",
+		substrate: "wss://explorer.devnet.grid.tf/ws",
 	}
 	r, err := resolver.Resolve(1)
 	if err != nil {
@@ -22,7 +22,7 @@ func TestResolveTwinIp(t *testing.T) {
 
 func TestResolveFail(t *testing.T) {
 	resolver := TwinExplorerResolver{
-		substrate: "https://explorer.devnet.grid.tf",
+		substrate: "wss://explorer.devnet.grid.tf/ws",
 	}
 	r, err := resolver.Resolve(9845856)
 	log.Debug().Err(err).Str("result", fmt.Sprintf("%v", r)).Msg("after requesting non-existent twin")
