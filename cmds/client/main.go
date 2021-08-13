@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/threefoldtech/rmb-go/pkg/client"
+	"github.com/threefoldtech/rmb/client"
 )
 
 func test_client() {

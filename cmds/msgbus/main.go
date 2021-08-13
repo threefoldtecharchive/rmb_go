@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/threefoldtech/rmb-go/pkg/rmb"
+	"github.com/threefoldtech/rmb"
 )
 
 type flags struct {

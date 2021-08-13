@@ -1,4 +1,4 @@
-module github.com/threefoldtech/rmb-go
+module github.com/threefoldtech/rmb
 
 go 1.16
 
