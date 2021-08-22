@@ -127,14 +127,12 @@ func (a *App) handleFromLocalPrepareItem(msg Message, dst int) error {
 	return nil
 }
 
-func (a *App) handleFromLocalPrepare(msg Message) error {
-	var reserr error = nil
+func (a *App) handleFromLocalPrepare(msg Message) {
 	for _, dst := range msg.TwinDst {
 		if err := a.handleFromLocalPrepareItem(msg, dst); err != nil {
-			reserr = err
+			log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
 		}
 	}
-	return reserr
 }
 
 func (a *App) handleFromLocal(value string) error {
@@ -148,7 +146,8 @@ func (a *App) handleFromLocal(value string) error {
 		return errors.Wrap(err, "local: couldn't validate input")
 	}
 
-	return a.handleFromLocalPrepare(msg)
+	a.handleFromLocalPrepare(msg)
+	return nil
 }
 
 func (a *App) handleFromRemote(value string) error {
@@ -367,31 +366,36 @@ func (a *App) runServer(ctx context.Context) {
 	for {
 		res, err := a.redis.BLPop(a.ctx, time.Second, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply")
 
+		if err == nil {
+			log.Debug().Str("queue", res[0]).Str("message", res[1]).Msg("found a redis payload")
+		}
+
 		if err == redis.Nil {
 			a.handleRetry()
 			a.handleScrubbing()
 			continue
 		} else if err != nil {
 			log.Error().Err(err).Msg("error fetching messages from redis")
-			continue
-		}
-
-		log.Debug().Str("queue", res[0]).Str("message", res[1]).Msg("found a redis payload")
-
-		if res[0] == "msgbus.system.reply" {
+			time.Sleep(time.Second)
+		} else if res[0] == "msgbus.system.reply" {
 			if err := a.handleFromReply(res[1]); err != nil {
 				log.Err(err).Msg("handle_from_reply")
 			}
-		}
-		if res[0] == "msgbus.system.local" {
+		} else if res[0] == "msgbus.system.local" {
 			if err := a.handleFromLocal(res[1]); err != nil {
 				log.Err(err).Msg("handle_from_local")
 			}
-		}
-		if res[0] == "msgbus.system.remote" {
+		} else if res[0] == "msgbus.system.remote" {
 			if err := a.handleFromRemote(res[1]); err != nil {
 				log.Err(err).Msg("handle_from_remote")
 			}
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Debug().Msg("stopping runServer as the context is done")
+			return
+		default:
 		}
 	}
 }
@@ -446,34 +450,37 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 	w.Write(successReply())
 
 }
-func (a *App) Serve(ctx context.Context) chan bool {
+func (a *App) Serve(ctx context.Context) error {
 	a.ctx = ctx
 	go a.runServer(ctx)
+	var serverErr error
 	go func() {
-		if err := a.server.ListenAndServe(); err != http.ErrServerClosed {
-			log.Err(err)
+		if serverErr = a.server.ListenAndServe(); serverErr != http.ErrServerClosed {
+			log.Error().Err(serverErr).Msg("server ListenAndServe failed")
 		}
 	}()
-	done := make(chan bool)
-	go func() {
-		interval := 5 * time.Second
-		timer := time.NewTimer(interval)
-		for {
-			select {
-			case <-ctx.Done():
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				defer cancel()
-				if err := a.Cancel(ctx); err != nil {
-					log.Err(err)
-				}
-				done <- true
-				return
-			case <-timer.C:
-				timer.Reset(interval)
+	interval := 2 * time.Second
+	timer := time.NewTimer(interval)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Debug().Msg("shutting down the server")
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			err := a.Cancel(ctx)
+			if err != nil {
+				log.Err(err)
 			}
+			if serverErr != nil && serverErr != http.ErrServerClosed {
+				return errors.Wrap(serverErr, "server ListenAndServe failed")
+			} else if err != nil {
+				return errors.Wrap(err, "error while stopping server")
+			}
+			return err
+		case <-timer.C:
+			timer.Reset(interval)
 		}
-	}()
-	return done
+	}
 }
 
 func (a *App) Cancel(ctx context.Context) error {
