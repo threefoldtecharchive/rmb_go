@@ -1,14 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/rmb"
@@ -35,22 +34,6 @@ func main() {
 		return
 	}
 
-	s, err := createServer(f)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := s.ListenAndServe(); err != nil {
-		if err == http.ErrServerClosed {
-			log.Info().Msg("server stopped gracefully")
-		} else {
-			log.Error().Err(err).Msg("server stopped unexpectedly")
-		}
-	}
-}
-
-func createServer(f flags) (*http.Server, error) {
-	router := mux.NewRouter()
 	debug := false
 	substrate := f.substrate
 	redis := f.redis
@@ -59,11 +42,10 @@ func createServer(f flags) (*http.Server, error) {
 		debug = true
 	}
 
-	rmb.Setup(router, debug, substrate, redis, twin)
-	return &http.Server{
-		Handler: router,
-		Addr:    "0.0.0.0:8051",
-	}, nil
+	s := rmb.NewServer(debug, substrate, redis, twin)
+	ctx := context.Background()
+	done := s.Serve(ctx)
+	<-done
 }
 
 const (

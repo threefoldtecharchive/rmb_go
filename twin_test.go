@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func TestResolveTwinIp(t *testing.T) {
+func TestResolveTwinIP(t *testing.T) {
 	resolver := TwinExplorerResolver{
 		substrate: "wss://explorer.devnet.grid.tf/ws",
 	}
@@ -15,8 +15,8 @@ func TestResolveTwinIp(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if r.(*TwinCommunicationChannel).dstIp != "202:6df5:9559:4c41:fa57:b09f:6e:ee0f" {
-		t.Errorf("expected 202:6df5:9559:4c41:fa57:b09f:6e:ee0f found %s", r.(*TwinCommunicationChannel).dstIp)
+	if r.(*TwinCommunicationChannel).dstIP != "202:6df5:9559:4c41:fa57:b09f:6e:ee0f" {
+		t.Errorf("expected 202:6df5:9559:4c41:fa57:b09f:6e:ee0f found %s", r.(*TwinCommunicationChannel).dstIP)
 	}
 }
 

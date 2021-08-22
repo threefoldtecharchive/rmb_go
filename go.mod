@@ -10,4 +10,5 @@ require (
 	github.com/rs/zerolog v1.23.0
 	github.com/stretchr/testify v1.7.0
 	github.com/threefoldtech/zos v0.4.10-0.20210804135636-7f25d677f88c
+	honnef.co/go/tools v0.1.3 // indirect
 )

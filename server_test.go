@@ -100,7 +100,7 @@ func (r *BackendMock) Incr(ctx context.Context, key string) (int64, error) {
 	if ok == false {
 		r.ints[key] = 0
 	}
-	r.ints[key] += 1
+	r.ints[key]++
 	return r.ints[key], nil
 }
 
@@ -119,7 +119,7 @@ func (r *BackendMock) Get(ctx context.Context, key string) (int64, error) {
 	if ok == false {
 		r.ints[key] = 0
 	}
-	r.ints[key] += 1
+	r.ints[key]++
 	return r.ints[key], nil
 }
 
@@ -137,25 +137,25 @@ func NewResolverMock() ResolverMock {
 type TwinCommunicationMock struct {
 	remote [][]byte
 	reply  [][]byte
-	twinId int
+	timeID int
 }
 
-func (r ResolverMock) Resolve(twinId int) (TwinCommunicationChannelInterace, error) {
-	log.Debug().Int("twin", twinId).Msg("resolving mock twinId")
-	e, ok := r.twin[twinId]
+func (r ResolverMock) Resolve(timeID int) (TwinCommunicationChannelInterace, error) {
+	log.Debug().Int("twin", timeID).Msg("resolving mock timeID")
+	e, ok := r.twin[timeID]
 	if ok == false {
 		e = &TwinCommunicationMock{
-			twinId: twinId,
+			timeID: timeID,
 			remote: make([][]byte, 0),
 			reply:  make([][]byte, 0),
 		}
-		r.twin[twinId] = e
+		r.twin[timeID] = e
 	}
 	return e, nil
 }
 
 func (c *TwinCommunicationMock) SendRemote(data []byte) error {
-	log.Debug().Int("twin", c.twinId).Msg("sending remote")
+	log.Debug().Int("twin", c.timeID).Msg("sending remote")
 	c.remote = append(c.remote, data)
 	return nil
 }
@@ -195,19 +195,19 @@ func TestHandleFromLocalPrepareItem(t *testing.T) {
 	secondTwinMock := secondTwin.(*TwinCommunicationMock)
 	msg := Message{
 		Version:    1,
-		Id:         "",
+		ID:         "",
 		Command:    "griddb.twins.get",
 		Expiration: 0,
 		Retry:      2,
 		Data:       base64.StdEncoding.EncodeToString([]byte("2")),
-		Twin_src:   0,
-		Twin_dst:   []int{2},
+		TwinSrc:    0,
+		TwinDst:    []int{2},
 		Retqueue:   uuid.New().String(),
 		Schema:     "",
 		Epoch:      time.Now().Unix(),
 		Err:        "",
 	}
-	err := app.handle_from_local_prepare_item(msg, 2)
+	err := app.handleFromLocalPrepareItem(msg, 2)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
@@ -230,13 +230,13 @@ func TestHandleFromLocal(t *testing.T) {
 	fourthTwinMock := fourthTwin.(*TwinCommunicationMock)
 	msg := Message{
 		Version:    1,
-		Id:         "",
+		ID:         "",
 		Command:    "griddb.twins.get",
 		Expiration: 0,
 		Retry:      2,
 		Data:       base64.StdEncoding.EncodeToString([]byte("2")),
-		Twin_src:   0,
-		Twin_dst:   []int{2, 4},
+		TwinSrc:    0,
+		TwinDst:    []int{2, 4},
 		Retqueue:   uuid.New().String(),
 		Schema:     "",
 		Epoch:      time.Now().Unix(),
@@ -246,7 +246,7 @@ func TestHandleFromLocal(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("error while parsing json")
 	}
-	err = app.handle_from_local(string(msgString))
+	err = app.handleFromLocal(string(msgString))
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
@@ -272,13 +272,13 @@ func TestHandleFromRemote(t *testing.T) {
 	app, backend, _ := setup()
 	msg := Message{
 		Version:    1,
-		Id:         "",
+		ID:         "",
 		Command:    "griddb.twins.get",
 		Expiration: 0,
 		Retry:      2,
 		Data:       base64.StdEncoding.EncodeToString([]byte("2")),
-		Twin_src:   0,
-		Twin_dst:   []int{2, 4},
+		TwinSrc:    0,
+		TwinDst:    []int{2, 4},
 		Retqueue:   uuid.New().String(),
 		Schema:     "",
 		Epoch:      time.Now().Unix(),
@@ -288,7 +288,7 @@ func TestHandleFromRemote(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("error while parsing json")
 	}
-	err = app.handle_from_remote(string(msgString))
+	err = app.handleFromRemote(string(msgString))
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
@@ -312,13 +312,13 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	app, backend, _ := setup()
 	msg := Message{
 		Version:    1,
-		Id:         "9.7",
+		ID:         "9.7",
 		Command:    "griddb.twins.get",
 		Expiration: 0,
 		Retry:      2,
 		Data:       base64.StdEncoding.EncodeToString([]byte("2")),
-		Twin_src:   0,
-		Twin_dst:   []int{2, 4},
+		TwinSrc:    0,
+		TwinDst:    []int{2, 4},
 		Retqueue:   uuid.New().String(),
 		Schema:     "",
 		Epoch:      time.Now().Unix(),
@@ -327,13 +327,12 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	update := msg
 	update.Retqueue = "msgbug.system.reply"
 	update.Data = base64.StdEncoding.EncodeToString([]byte("result"))
-	updateString, err := json.Marshal(update)
-	if err != nil {
-		log.Err(err).Msg("error while parsing json")
-	}
 	msgString, err := json.Marshal(msg)
-	backend.HSet(app.ctx, "msgbus.system.backlog", msg.Id, msgString)
-	err = app.handle_from_reply_for_me(update)
+	if err != nil {
+		log.Err(err).Msg("failed to marshal message")
+	}
+	backend.HSet(app.ctx, "msgbus.system.backlog", msg.ID, msgString)
+	err = app.handleFromReplyForMe(update)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
@@ -342,9 +341,9 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("didn't find anything in msgbus.griddb.twins.get")
 	}
-	updateString, err = json.Marshal(update)
+	updateString, err := json.Marshal(update)
 	if err != nil {
-		log.Err(err).Msg("error while handling from local perpare item")
+		log.Err(err).Msg("error while parsing json")
 	}
 	assert.Equal(t, res[0], update.Retqueue)
 	assert.Equal(t, res[1], string(updateString))

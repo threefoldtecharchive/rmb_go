@@ -11,7 +11,7 @@ import (
 )
 
 type TwinResolverInterface interface {
-	Resolve(twinId int) (TwinCommunicationChannelInterace, error)
+	Resolve(timeID int) (TwinCommunicationChannelInterace, error)
 }
 
 type TwinCommunicationChannelInterace interface {
@@ -24,39 +24,41 @@ type TwinExplorerResolver struct {
 }
 
 type TwinCommunicationChannel struct {
-	dstIp string
+	dstIP string
 }
 
-func remoteUrl(twinIp string) string {
-	return fmt.Sprintf("http://%s:8051/zbus-remote", twinIp)
+func remoteURL(timeIP string) string {
+	return fmt.Sprintf("http://%s:8051/zbus-remote", timeIP)
 }
 
-func replyUrl(twinIp string) string {
-	return fmt.Sprintf("http://%s:8051/zbus-reply", twinIp)
+func replyURL(timeIP string) string {
+	return fmt.Sprintf("http://%s:8051/zbus-reply", timeIP)
 }
 
-func (r TwinExplorerResolver) Resolve(twinId int) (TwinCommunicationChannelInterace, error) {
-	log.Debug().Int("twin", twinId).Msg("resolving twin")
+func (r TwinExplorerResolver) Resolve(timeID int) (TwinCommunicationChannelInterace, error) {
+	log.Debug().Int("twin", timeID).Msg("resolving twin")
 
 	client, err := substrate.NewSubstrate(r.substrate)
 	if err != nil {
 		return nil, err
 	}
-	twin, err := client.GetTwin(uint32(twinId))
+	twin, err := client.GetTwin(uint32(timeID))
 	if err != nil {
 		return nil, err
 	}
 	log.Debug().Str("ip", twin.IP).Msg("resolved twin ip")
 
 	return &TwinCommunicationChannel{
-		dstIp: twin.IP,
+		dstIP: twin.IP,
 	}, nil
 }
 
 func (c *TwinCommunicationChannel) SendRemote(data []byte) error {
-	resp, err := http.Post(remoteUrl(c.dstIp), "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(remoteURL(c.dstIP), "application/json", bytes.NewBuffer(data))
 	// check on response for non-communication errors?
-
+	if err != nil {
+		return err
+	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Warn().Err(err).Msg("couldn't read body of remote request")
@@ -67,7 +69,12 @@ func (c *TwinCommunicationChannel) SendRemote(data []byte) error {
 }
 
 func (c *TwinCommunicationChannel) SendReply(data []byte) error {
-	resp, err := http.Post(replyUrl(c.dstIp), "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(replyURL(c.dstIP), "application/json", bytes.NewBuffer(data))
+
+	if err != nil {
+		return err
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Warn().Err(err).Msg("couldn't read body of reply request")
