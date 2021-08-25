@@ -8,8 +8,9 @@ import (
 )
 
 func TestResolveTwinIP(t *testing.T) {
-	resolver := TwinExplorerResolver{
-		substrate: "wss://explorer.devnet.grid.tf/ws",
+	resolver, err := NewTwinExplorerResolver("wss://explorer.devnet.grid.tf/ws")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 	r, err := resolver.Resolve(1)
 	if err != nil {
@@ -21,8 +22,9 @@ func TestResolveTwinIP(t *testing.T) {
 }
 
 func TestResolveFail(t *testing.T) {
-	resolver := TwinExplorerResolver{
-		substrate: "wss://explorer.devnet.grid.tf/ws",
+	resolver, err := NewTwinExplorerResolver("wss://explorer.devnet.grid.tf/ws")
+	if err == nil {
+		t.Errorf("twin shouldn't be found but err is null")
 	}
 	r, err := resolver.Resolve(9845856)
 	log.Debug().Err(err).Str("result", fmt.Sprintf("%v", r)).Msg("after requesting non-existent twin")

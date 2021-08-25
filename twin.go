@@ -20,7 +20,7 @@ type TwinCommunicationChannelInterace interface {
 }
 
 type TwinExplorerResolver struct {
-	substrate string
+	client *substrate.Substrate
 }
 
 type TwinCommunicationChannel struct {
@@ -35,14 +35,20 @@ func replyURL(timeIP string) string {
 	return fmt.Sprintf("http://%s:8051/zbus-reply", timeIP)
 }
 
-func (r TwinExplorerResolver) Resolve(timeID int) (TwinCommunicationChannelInterace, error) {
-	log.Debug().Int("twin", timeID).Msg("resolving twin")
-
-	client, err := substrate.NewSubstrate(r.substrate)
+func NewTwinExplorerResolver(substrateURL string) (*TwinExplorerResolver, error) {
+	client, err := substrate.NewSubstrate(substrateURL)
 	if err != nil {
 		return nil, err
 	}
-	twin, err := client.GetTwin(uint32(timeID))
+	return &TwinExplorerResolver{
+		client: client,
+	}, nil
+}
+
+func (r TwinExplorerResolver) Resolve(timeID int) (TwinCommunicationChannelInterace, error) {
+	log.Debug().Int("twin", timeID).Msg("resolving twin")
+
+	twin, err := r.client.GetTwin(uint32(timeID))
 	if err != nil {
 		return nil, err
 	}

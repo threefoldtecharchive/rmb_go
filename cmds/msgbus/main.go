@@ -42,7 +42,11 @@ func main() {
 		debug = true
 	}
 
-	s := rmb.NewServer(debug, substrate, redis, twin)
+	s, err := rmb.NewServer(debug, substrate, redis, twin)
+	if err != nil {
+		log.Error().Err(err).Msg("couldn't start server")
+		return
+	}
 	ctx := context.Background()
 	if err := s.Serve(ctx); err != nil {
 		log.Error().Err(err).Msg("server running failed")

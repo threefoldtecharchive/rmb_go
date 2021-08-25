@@ -86,6 +86,9 @@ func (a *App) validateInput(msg Message) error {
 }
 
 func (a *App) handleFromLocalPrepareItem(msg Message, dst int) error {
+	if msg.Epoch == 0 {
+		msg.Epoch = time.Now().Unix()
+	}
 	update := msg
 	update.TwinSrc = a.twin
 	update.TwinDst = []int{dst}
@@ -107,6 +110,7 @@ func (a *App) handleFromLocalPrepareItem(msg Message, dst int) error {
 	c, err := a.resolver.Resolve(dst)
 
 	if err != nil {
+		a.requestNeedsRetry(msg, update)
 		return errors.Wrap(err, "couldn't get twin ip")
 	}
 	err = c.SendRemote(output)
@@ -452,18 +456,22 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) Serve(ctx context.Context) error {
 	a.ctx = ctx
-	go a.runServer(ctx)
+	serverctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go a.runServer(serverctx)
 	var serverErr error
 	go func() {
 		if serverErr = a.server.ListenAndServe(); serverErr != http.ErrServerClosed {
 			log.Error().Err(serverErr).Msg("server ListenAndServe failed")
+			log.Debug().Msg("calling serverctx cancel")
+			cancel()
 		}
 	}()
 	interval := 2 * time.Second
 	timer := time.NewTimer(interval)
 	for {
 		select {
-		case <-ctx.Done():
+		case <-serverctx.Done():
 			log.Debug().Msg("shutting down the server")
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
@@ -487,7 +495,7 @@ func (a *App) Cancel(ctx context.Context) error {
 	return a.server.Shutdown(ctx)
 }
 
-func NewServer(debug bool, substrate string, redisServer string, twin int) *App {
+func NewServer(debug bool, substrate string, redisServer string, twin int) (*App, error) {
 	router := mux.NewRouter()
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisServer,
@@ -495,14 +503,16 @@ func NewServer(debug bool, substrate string, redisServer string, twin int) *App 
 		DB:       0,  // use default DB
 	})
 	backend := RedisBackend{client: rdb}
+	resolver, err := NewTwinExplorerResolver(substrate)
+	if err != nil {
+		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
+	}
 	a := &App{
-		debug: debug,
-		redis: backend,
-		twin:  twin,
-		ctx:   context.Background(),
-		resolver: TwinExplorerResolver{
-			substrate: substrate,
-		},
+		debug:    debug,
+		redis:    backend,
+		twin:     twin,
+		ctx:      context.Background(),
+		resolver: resolver,
 		server: &http.Server{
 			Handler: router,
 			Addr:    "0.0.0.0:8051",
@@ -510,27 +520,5 @@ func NewServer(debug bool, substrate string, redisServer string, twin int) *App 
 	}
 	router.HandleFunc("/zbus-reply", a.reply)
 	router.HandleFunc("/zbus-remote", a.remote)
-	http.Handle("/", router)
-	return a
-}
-func Setup(router *mux.Router, debug bool, substrate string, redisServer string, twin int) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisServer,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-	backend := RedisBackend{client: rdb}
-	a := App{
-		debug: debug,
-		redis: backend,
-		twin:  twin,
-		ctx:   context.Background(),
-		resolver: TwinExplorerResolver{
-			substrate: substrate,
-		},
-	}
-	go a.runServer(context.Background())
-	router.HandleFunc("/zbus-reply", a.reply)
-	router.HandleFunc("/zbus-remote", a.remote)
-	http.Handle("/", router)
+	return a, nil
 }
