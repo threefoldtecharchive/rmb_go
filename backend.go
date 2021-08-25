@@ -7,6 +7,24 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+const (
+	Local Tag = iota
+	Reply
+	Remote
+)
+
+type Tag int
+
+type Envelope struct {
+	Message
+	Tag Tag
+}
+type Backend interface {
+	QueueReply(ctx context.Context, msg Message) error // method name
+	QueueRemote(ctx context.Context, msg Message) error
+	Next(ctx context.Context, timeout time.Duration) (Envelope, error)
+}
+
 type BackendInterface interface {
 	HGet(ctx context.Context, key string, field string) (string, error)
 	HGetAll(ctx context.Context, key string) (map[string]string, error)

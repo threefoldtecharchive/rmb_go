@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -50,13 +49,15 @@ type MBusCtx struct {
 
 type App struct {
 	redis    BackendInterface
+	backend  Backend
 	twin     int
 	resolver TwinResolverInterface
 	server   *http.Server
 }
 
-func errorReply(message string) []byte {
-	return []byte(fmt.Sprintf("{\"status\": \"error\", \"message\": \"%s\"}", message))
+func errorReply(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	fmt.Fprintf(w, "{\"status\": \"error\", \"message\": \"%s\"}", message)
 }
 
 func successReply() []byte {
@@ -401,54 +402,35 @@ func (a *App) runServer(ctx context.Context) {
 }
 
 func (a *App) remote(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		w.Write(errorReply("couldn't read body"))
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
 
-	log.Debug().Str("request_body", string(body)).Msg("request from external agent")
-
-	msg := Message{}
-
-	if err := json.Unmarshal(body, &msg); err != nil {
-		w.Write(errorReply("couldn't parse json"))
-		return
-	}
 	// locking?
-	_, err = a.redis.LPush(r.Context(), "msgbus.system.remote", body)
-
-	if err != nil {
-		err = errors.Wrap(err, "couldn't push entry to reply queue")
-		w.Write(errorReply(err.Error()))
+	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
+		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
+		return
 	}
 
-	w.Write(successReply())
-
+	w.WriteHeader(http.StatusOK)
 }
 
 func (a *App) reply(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		w.Write(errorReply("couldn't read body"))
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
-	log.Debug().Str("request_body", string(body)).Msg("request from external agent")
 
-	msg := Message{}
-
-	if err := json.Unmarshal(body, &msg); err != nil {
-		w.Write(errorReply("couldn't parse json"))
-		return
-	}
-	// locking?
-	_, err = a.redis.LPush(r.Context(), "msgbus.system.reply", body)
-	if err != nil {
+	if err := a.backend.QueueReply(r.Context(), msg); err != nil {
 		err = errors.Wrap(err, "couldn't push entry to reply queue")
-		w.Write(errorReply(err.Error()))
+		errorReply(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	w.Write(successReply())
 
+	w.WriteHeader(http.StatusOK)
 }
 func (a *App) Serve(root context.Context) error {
 	ctx, cancel := context.WithCancel(root)
