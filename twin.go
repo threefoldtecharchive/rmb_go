@@ -2,28 +2,29 @@ package rmb
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/zos/pkg/substrate"
 )
 
-type TwinResolverInterface interface {
-	Resolve(timeID int) (TwinCommunicationChannelInterace, error)
+type TwinResolver interface {
+	Resolve(timeID int) (TwinClient, error)
 }
 
-type TwinCommunicationChannelInterace interface {
-	SendRemote(data []byte) error
-	SendReply(data []byte) error
+type TwinClient interface {
+	SendRemote(msg Message) error
+	SendReply(msg Message) error
 }
 
 type TwinExplorerResolver struct {
 	client *substrate.Substrate
 }
 
-type TwinCommunicationChannel struct {
+type twinClient struct {
 	dstIP string
 }
 
@@ -35,17 +36,18 @@ func replyURL(timeIP string) string {
 	return fmt.Sprintf("http://%s:8051/zbus-reply", timeIP)
 }
 
-func NewTwinExplorerResolver(substrateURL string) (*TwinExplorerResolver, error) {
+func NewTwinResolver(substrateURL string) (TwinResolver, error) {
 	client, err := substrate.NewSubstrate(substrateURL)
 	if err != nil {
 		return nil, err
 	}
+
 	return &TwinExplorerResolver{
 		client: client,
 	}, nil
 }
 
-func (r TwinExplorerResolver) Resolve(timeID int) (TwinCommunicationChannelInterace, error) {
+func (r TwinExplorerResolver) Resolve(timeID int) (TwinClient, error) {
 	log.Debug().Int("twin", timeID).Msg("resolving twin")
 
 	twin, err := r.client.GetTwin(uint32(timeID))
@@ -54,38 +56,62 @@ func (r TwinExplorerResolver) Resolve(timeID int) (TwinCommunicationChannelInter
 	}
 	log.Debug().Str("ip", twin.IP).Msg("resolved twin ip")
 
-	return &TwinCommunicationChannel{
+	return &twinClient{
 		dstIP: twin.IP,
 	}, nil
 }
 
-func (c *TwinCommunicationChannel) SendRemote(data []byte) error {
-	resp, err := http.Post(remoteURL(c.dstIP), "application/json", bytes.NewBuffer(data))
+func (c *twinClient) readError(r io.Reader) string {
+	var body struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+
+	if err := json.NewDecoder(r).Decode(&body); err != nil {
+		return fmt.Sprintf("failed to read response body: %s", err)
+	}
+
+	return body.Message
+}
+
+func (c *twinClient) SendRemote(msg Message) error {
+	var buffer bytes.Buffer
+	if err := json.NewEncoder(&buffer).Encode(msg); err != nil {
+		return err
+	}
+	resp, err := http.Post(remoteURL(c.dstIP), "application/json", &buffer)
 	// check on response for non-communication errors?
 	if err != nil {
 		return err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Warn().Err(err).Msg("couldn't read body of remote request")
-	} else {
-		log.Debug().Str("response", string(body)).Int("status", resp.StatusCode).Msg("message sent to target msgbus")
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// body
+		return fmt.Errorf("failed to send remote: %s (%s)", resp.Status, c.readError(resp.Body))
 	}
-	return err
+
+	return nil
 }
 
-func (c *TwinCommunicationChannel) SendReply(data []byte) error {
-	resp, err := http.Post(replyURL(c.dstIP), "application/json", bytes.NewBuffer(data))
+func (c *twinClient) SendReply(msg Message) error {
+	var buffer bytes.Buffer
+	if err := json.NewEncoder(&buffer).Encode(msg); err != nil {
+		return err
+	}
+	resp, err := http.Post(replyURL(c.dstIP), "application/json", &buffer)
 
 	if err != nil {
 		return err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Warn().Err(err).Msg("couldn't read body of reply request")
-	} else {
-		log.Debug().Str("response", string(body)).Int("status", resp.StatusCode).Msg("message sent to target msgbus")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// body
+		return fmt.Errorf("failed to send remote: %s (%s)", resp.Status, c.readError(resp.Body))
 	}
+
 	return err
 }

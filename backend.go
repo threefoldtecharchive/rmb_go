@@ -2,9 +2,22 @@ package rmb
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
+)
+
+var (
+	ErrNotAvailable = fmt.Errorf("not available")
+
+	tagsMap = map[string]Tag{
+		"msgbus.system.local":  Local,
+		"msgbus.system.remote": Remote,
+		"msgbus.system.reply":  Reply,
+	}
 )
 
 const (
@@ -36,7 +49,28 @@ type BackendInterface interface {
 }
 
 type RedisBackend struct {
+	//TODO: single client is not good in case of connection loss or
+	// redis restart. instead use a pool of connections where it can be
+	// reused, or reconnected
 	client *redis.Client
+}
+
+func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelope, error) {
+	res, err := r.client.BLPop(ctx, timeout, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
+
+	if err == redis.Nil {
+		return Envelope{}, ErrNotAvailable
+	} else if err != nil {
+		return Envelope{}, errors.Wrap(err, "failed to get next message")
+	}
+
+	var envelope Envelope
+	if err := json.Unmarshal([]byte(res[1]), &envelope); err != nil {
+		return envelope, err
+	}
+
+	envelope.Tag = tagsMap[res[0]]
+	return envelope, nil
 }
 
 func (r RedisBackend) HGet(ctx context.Context, key string, field string) (string, error) {
