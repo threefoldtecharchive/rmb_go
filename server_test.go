@@ -179,10 +179,8 @@ func setup() (a App, s BackendMock, r ResolverMock) {
 	backend := NewBackendMock()
 	resolver := NewResolverMock()
 	app := App{
-		debug:    true,
 		redis:    backend,
 		twin:     1,
-		ctx:      context.Background(),
 		resolver: resolver,
 	}
 
@@ -207,7 +205,7 @@ func TestHandleFromLocalPrepareItem(t *testing.T) {
 		Epoch:      time.Now().Unix(),
 		Err:        "",
 	}
-	err := app.handleFromLocalPrepareItem(msg, 2)
+	err := app.handleFromLocalPrepareItem(context.TODO(), msg, 2)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
@@ -246,7 +244,7 @@ func TestHandleFromLocal(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("error while parsing json")
 	}
-	err = app.handleFromLocal(string(msgString))
+	err = app.handleFromLocal(context.TODO(), string(msgString))
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
@@ -288,11 +286,11 @@ func TestHandleFromRemote(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("error while parsing json")
 	}
-	err = app.handleFromRemote(string(msgString))
+	err = app.handleFromRemote(context.TODO(), string(msgString))
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
-	res, err := backend.BLPop(app.ctx, 1000000000, "msgbus.griddb.twins.get")
+	res, err := backend.BLPop(context.TODO(), 1000000000, "msgbus.griddb.twins.get")
 	if err != nil {
 		log.Err(err).Msg("didn't find anything in msgbus.griddb.twins.get")
 	}
@@ -331,13 +329,14 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	if err != nil {
 		log.Err(err).Msg("failed to marshal message")
 	}
-	backend.HSet(app.ctx, "msgbus.system.backlog", msg.ID, msgString)
-	err = app.handleFromReplyForMe(update)
+
+	backend.HSet(context.TODO(), "msgbus.system.backlog", msg.ID, msgString)
+	err = app.handleFromReplyForMe(context.TODO(), update)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
 	update.Retqueue = msg.Retqueue
-	res, err := backend.BLPop(app.ctx, 1000000000, update.Retqueue)
+	res, err := backend.BLPop(context.TODO(), 1000000000, update.Retqueue)
 	if err != nil {
 		log.Err(err).Msg("didn't find anything in msgbus.griddb.twins.get")
 	}

@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/rmb"
@@ -20,38 +23,57 @@ type flags struct {
 	redis     string
 }
 
+func (f *flags) Valid() error {
+	if f.twin == -1 {
+		return fmt.Errorf("twin id is required")
+	}
+	return nil
+}
+
 func main() {
-	f := flags{}
+	var f flags
 	flag.IntVar(&f.twin, "twin", -1, "the twin id")
 	flag.StringVar(&f.substrate, "substrate", "wss://explorer.devnet.grid.tf/ws", "substrate url")
 	flag.StringVar(&f.debug, "log-level", "debug", "log level [debug|info|warn|error|fatal|panic]")
 	flag.StringVar(&f.redis, "redis", "127.0.0.1:6379", "redis url")
 
 	flag.Parse()
+
+	if err := f.Valid(); err != nil {
+		flag.PrintDefaults()
+		log.Fatal().Err(err).Msg("invalid arguments")
+	}
+
 	setupLogging(f.debug)
-	if f.twin == -1 {
-		println("twin flag is required")
-		return
-	}
 
-	debug := false
-	substrate := f.substrate
-	redis := f.redis
-	twin := f.twin
-	if f.debug == "all" {
-		debug = true
+	if err := app(f); err != nil {
+		log.Fatal().Msg(err.Error())
 	}
+}
 
-	s, err := rmb.NewServer(debug, substrate, redis, twin)
+func app(f flags) error {
+	s, err := rmb.NewServer(f.substrate, f.redis, f.twin)
 	if err != nil {
-		log.Error().Err(err).Msg("couldn't start server")
-		return
-	}
-	ctx := context.Background()
-	if err := s.Serve(ctx); err != nil {
-		log.Error().Err(err).Msg("server running failed")
+		return errors.Wrap(err, "failed to create server")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		<-ch
+		log.Info().Msg("shutting down...")
+		cancel()
+	}()
+
+	if err := s.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		return errors.Wrap(err, "server exited unexpectedly")
+	}
+
+	return nil
 }
 
 const (
