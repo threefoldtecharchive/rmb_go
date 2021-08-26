@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -46,25 +45,6 @@ func (a *Message) Valid() error {
 	}
 
 	return nil
-}
-
-type HSetEntry struct {
-	Key   string  `json:"key"`
-	Value Message `json:"value"`
-}
-
-type SubstrateTwin struct {
-	Version int    `json:"version"`
-	ID      int    `json:"id"`
-	Account string `json:"account"`
-	IP      string `json:"ip"`
-}
-
-type MBusCtx struct {
-	Debug        int
-	RedisAddress string
-	MyID         int
-	Subaddr      string
 }
 
 type App struct {
@@ -154,7 +134,6 @@ func (a *App) handleFromLocal(ctx context.Context, msg Message) error {
 			log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
 		}
 	}
-	// remove nil or concatenate errors
 	return nil
 }
 
@@ -226,9 +205,11 @@ func (a *App) handleRetry(ctx context.Context) error {
 	for _, entry := range entries {
 		log.Info().Str("key", entry.ID).Msg("retry needed")
 
-		// re-call sending function, which will succeed
-		// or put it back to retry
-		a.handleFromLocalItem(ctx, entry, entry.TwinDst[0])
+		err := a.handleFromLocalItem(ctx, entry, entry.TwinDst[0])
+		if err != nil {
+			// just log the error, repushing to retry queue happens inside handleFromLocalItem
+			log.Warn().Err(err).Msg("error handling message in retry queue")
+		}
 	}
 	return nil
 }
@@ -245,7 +226,10 @@ func (a *App) handleScrubbing(ctx context.Context) error {
 	// iterate over each entries
 	for _, entry := range entries {
 		log.Debug().Str("key", entry.ID).Msg("expired")
-		a.respondWithError(ctx, entry, fmt.Errorf("request timeout (expiration reached, %d)", entry.Expiration))
+		if repErr := a.respondWithError(ctx, entry, fmt.Errorf("request timeout (expiration reached, %d)", entry.Expiration)); repErr != nil {
+			log.Error().Err(repErr).Msg("error responding to rmb called with error")
+			log.Error().Err(err).Msg("original error")
+		}
 	}
 	return nil
 }
@@ -285,8 +269,6 @@ func (a *App) runServer(ctx context.Context) {
 		if err := envelope.Valid(); err != nil {
 			log.Error().Err(err).Msg("received invalid message")
 			a.respondWithError(ctx, envelope.Message, errors.Wrap(err, "received invalid message"))
-			//TODO: try to send the reply with the validation error
-			// back to the caller, even if u can't process the mssage.
 		}
 
 		switch envelope.Tag {
@@ -357,12 +339,7 @@ func (a *App) Serve(root context.Context) error {
 
 func NewServer(substrate string, redisServer string, twin int) (*App, error) {
 	router := mux.NewRouter()
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisServer,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-	backend := &RedisBackend{client: rdb}
+	backend := NewRedisBackend(redisServer)
 	resolver, err := NewTwinResolver(substrate)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")

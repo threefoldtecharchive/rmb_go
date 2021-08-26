@@ -63,12 +63,19 @@ type BackendInterface interface {
 }
 
 type RedisBackend struct {
-	//TODO: single client is not good in case of connection loss or
-	// redis restart. instead use a pool of connections where it can be
-	// reused, or reconnected
+	// looks like it's implemented as a pool
 	client *redis.Client
 }
 
+func NewRedisBackend(redisServer string) *RedisBackend {
+	return &RedisBackend{
+		client: redis.NewClient(&redis.Options{
+			Addr:     redisServer,
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		}),
+	}
+}
 func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelope, error) {
 	res, err := r.client.BLPop(ctx, timeout, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
 
