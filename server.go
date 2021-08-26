@@ -80,11 +80,29 @@ func errorReply(w http.ResponseWriter, status int, message string) {
 	fmt.Fprintf(w, "{\"status\": \"error\", \"message\": \"%s\"}", message)
 }
 
-func successReply() []byte {
-	return []byte("{\"status\": \"accepted\"}")
+func successReply(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "{\"status\": \"accepted\"}")
 }
 
-func (a *App) handleFromLocalPrepareItem(ctx context.Context, msg Message, dst int) error {
+func (a *App) respondWithError(ctx context.Context, msg Message, err error) error {
+	return nil
+}
+
+func (a *App) msgNeedsRetry(ctx context.Context, msg Message, err error) error {
+	if msg.Retry == 0 {
+		if err := a.respondWithError(ctx, msg, errors.Wrap(err, "all retries done")); err != nil {
+			return errors.Wrap(err, "failed to respond to the caller with the proper err")
+		}
+	} else {
+		if err := a.backend.QueueRetry(ctx, msg); err != nil {
+			return errors.Wrap(err, "failed to queue msg for retry")
+		}
+	}
+	return nil
+}
+
+func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) error {
 	if msg.Epoch == 0 {
 		msg.Epoch = time.Now().Unix()
 	}
@@ -92,49 +110,50 @@ func (a *App) handleFromLocalPrepareItem(ctx context.Context, msg Message, dst i
 	update.TwinSrc = a.twin
 	update.TwinDst = []int{dst}
 
-	id, err := a.redis.Incr(ctx, fmt.Sprintf("msgbus.counter.%d", dst))
+	err := error(nil)
+	defer func() {
+		if err != nil {
+			if repErr := a.msgNeedsRetry(ctx, msg, err); repErr != nil {
+				log.Error().Err(repErr).Msg("failed while processing message retry")
+				log.Error().Err(err).Str("id", msg.ID).Msg("original error")
+			}
+		}
+	}()
 
+	id, err := a.backend.IncrementID(ctx, dst)
 	if err != nil {
 		return err
 	}
 
 	update.ID = fmt.Sprintf("%d.%d", dst, id)
+	// anything better?
 	update.Retqueue = "msgbus.system.reply"
 
 	c, err := a.resolver.Resolve(dst)
 
 	if err != nil {
-		a.requestNeedsRetry(ctx, msg, update)
 		return errors.Wrap(err, "couldn't get twin ip")
 	}
 	err = c.SendRemote(update)
 
 	if err != nil {
-		a.requestNeedsRetry(ctx, msg, update)
 		return err
 	}
 
-	value, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	_, err = a.redis.HSet(ctx, "msgbus.system.backlog", update.ID, value)
+	err = a.backend.PushToBacklog(ctx, msg, update.ID)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *App) handleFromLocalPrepare(ctx context.Context, msg Message) {
+func (a *App) handleFromLocal(ctx context.Context, msg Message) error {
 	for _, dst := range msg.TwinDst {
-		if err := a.handleFromLocalPrepareItem(ctx, msg, dst); err != nil {
+		if err := a.handleFromLocalItem(ctx, msg, dst); err != nil {
 			log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
 		}
 	}
-}
-
-func (a *App) handleFromLocal(ctx context.Context, msg Message) error {
-	a.handleFromLocalPrepare(ctx, msg)
+	// remove nil or concatenate errors
 	return nil
 }
 
@@ -288,7 +307,7 @@ func (a *App) handleRetry(ctx context.Context) error {
 
 			// re-call sending function, which will succeed
 			// or put it back to retry
-			a.handleFromLocalPrepareItem(ctx, entry.Value, entry.Value.TwinDst[0])
+			a.handleFromLocalItem(ctx, entry.Value, entry.Value.TwinDst[0])
 		}
 	}
 	return nil
@@ -392,13 +411,12 @@ func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// locking?
 	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
 		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	successReply(w)
 }
 
 func (a *App) reply(w http.ResponseWriter, r *http.Request) {
@@ -413,8 +431,7 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	w.WriteHeader(http.StatusOK)
+	successReply(w)
 }
 func (a *App) Serve(root context.Context) error {
 	ctx, cancel := context.WithCancel(root)

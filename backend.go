@@ -36,6 +36,9 @@ type Backend interface {
 	QueueReply(ctx context.Context, msg Message) error // method name
 	QueueRemote(ctx context.Context, msg Message) error
 	Next(ctx context.Context, timeout time.Duration) (Envelope, error)
+	PushToBacklog(ctx context.Context, msg Message, id string) error
+	QueueRetry(ctx context.Context, msg Message) error
+	PopMessageFromBacklog(ctx context.Context, id string) error
 }
 
 type BackendInterface interface {
