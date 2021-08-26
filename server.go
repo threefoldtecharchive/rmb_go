@@ -264,6 +264,7 @@ func (a *App) runServer(ctx context.Context) {
 				return
 			case <-time.After(5 * time.Second):
 			}
+			continue
 		}
 
 		if err := envelope.Valid(); err != nil {
