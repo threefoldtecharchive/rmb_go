@@ -206,7 +206,7 @@ func (r *RedisBackend) PopRetryMessages(ctx context.Context, olderThan time.Dura
 			log.Error().Err(errors.Wrap(err, "couldn't parse json")).Msg("handling retry queue")
 			continue
 		}
-		if now > msg.Epoch+5 {
+		if now > msg.Epoch+int64(olderThan/time.Second) {
 			if _, err := r.client.HDel(ctx, "msgbus.system.retry", key).Result(); err != nil {
 				log.Error().Err(err).Msg("error deleting retry message")
 			} else {
