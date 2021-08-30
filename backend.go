@@ -82,7 +82,7 @@ func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelop
 	if err == redis.Nil {
 		return Envelope{}, ErrNotAvailable
 	} else if err != nil {
-		return Envelope{}, errors.Wrap(err, "failed to get next message")
+		return Envelope{}, err
 	}
 
 	var envelope Envelope
@@ -102,7 +102,7 @@ func (r *RedisBackend) QueueReply(ctx context.Context, msg Message) error {
 
 	_, err = r.client.LPush(ctx, "msgbus.system.reply", bytes).Result()
 	if err != nil {
-		return errors.Wrap(err, "failed to push reply message to redis")
+		return err
 	}
 	return nil
 }
@@ -115,7 +115,7 @@ func (r *RedisBackend) QueueRemote(ctx context.Context, msg Message) error {
 
 	_, err = r.client.LPush(ctx, "msgbus.system.remote", bytes).Result()
 	if err != nil {
-		return errors.Wrap(err, "failed to push remote message to redis")
+		return err
 	}
 	return nil
 }
@@ -123,7 +123,7 @@ func (r *RedisBackend) QueueRemote(ctx context.Context, msg Message) error {
 func (r *RedisBackend) IncrementID(ctx context.Context, id int) (int64, error) {
 	cnt, err := r.client.Incr(ctx, fmt.Sprintf("msgbus.counter.%d", id)).Result()
 	if err != nil {
-		return 0, errors.Wrap(err, "failed to increment redis counter")
+		return 0, err
 	}
 	return cnt, nil
 }
@@ -136,7 +136,7 @@ func (r *RedisBackend) PushToBacklog(ctx context.Context, msg Message, id string
 
 	_, err = r.client.HSet(ctx, "msgbus.system.backlog", id, bytes).Result()
 	if err != nil {
-		return errors.Wrap(err, "failed to add to redis msgbus.system.backlog")
+		return err
 	}
 	return nil
 }
@@ -149,8 +149,7 @@ func (r *RedisBackend) PopMessageFromBacklog(ctx context.Context, id string) (Me
 	if err == redis.Nil {
 		return msg, ErrNotAvailable
 	} else if err != nil {
-		// looks like most errors here doesn't need wrapping, looks like a string from its parent
-		return msg, errors.Wrap(err, "error fetching message from backlog")
+		return msg, err
 	}
 
 	if err := json.Unmarshal([]byte(bytes), &msg); err != nil {
