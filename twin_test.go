@@ -8,7 +8,7 @@ import (
 )
 
 func TestResolveTwinIP(t *testing.T) {
-	resolver, err := NewTwinExplorerResolver("wss://explorer.devnet.grid.tf/ws")
+	resolver, err := NewTwinResolver("wss://explorer.devnet.grid.tf/ws")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -16,15 +16,15 @@ func TestResolveTwinIP(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if r.(*TwinCommunicationChannel).dstIP != "202:6df5:9559:4c41:fa57:b09f:6e:ee0f" {
-		t.Errorf("expected 202:6df5:9559:4c41:fa57:b09f:6e:ee0f found %s", r.(*TwinCommunicationChannel).dstIP)
+	if r.(*twinClient).dstIP != "202:6df5:9559:4c41:fa57:b09f:6e:ee0f" {
+		t.Errorf("expected 202:6df5:9559:4c41:fa57:b09f:6e:ee0f found %s", r.(*twinClient).dstIP)
 	}
 }
 
 func TestResolveFail(t *testing.T) {
-	resolver, err := NewTwinExplorerResolver("wss://explorer.devnet.grid.tf/ws")
-	if err == nil {
-		t.Errorf("twin shouldn't be found but err is null")
+	resolver, err := NewTwinResolver("wss://explorer.devnet.grid.tf/ws")
+	if err != nil {
+		t.Errorf("couldn't retrieve resolver")
 	}
 	r, err := resolver.Resolve(9845856)
 	log.Debug().Err(err).Str("result", fmt.Sprintf("%v", r)).Msg("after requesting non-existent twin")

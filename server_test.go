@@ -3,7 +3,6 @@ package rmb
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -14,163 +13,195 @@ import (
 )
 
 type BackendMock struct {
-	lists map[string][]string
-	dicts map[string]map[string]string
-	ints  map[string]int64
+	replies        []Message
+	remotes        []Message
+	locals         []Message
+	retries        []Message
+	backlog        map[string]Message
+	commandMsgs    map[string][]Message
+	commandReplies map[string][]Message
+	ids            map[int]int
 }
 
 func NewBackendMock() *BackendMock {
 	r := &BackendMock{
-		lists: make(map[string][]string),
-		dicts: make(map[string]map[string]string),
-		ints:  make(map[string]int64),
+		replies:        make([]Message, 0),
+		remotes:        make([]Message, 0),
+		locals:         make([]Message, 0),
+		retries:        make([]Message, 0),
+		backlog:        make(map[string]Message),
+		commandMsgs:    make(map[string][]Message),
+		commandReplies: make(map[string][]Message),
+		ids:            make(map[int]int),
 	}
 	return r
 }
 
-func (r *BackendMock) HGet(ctx context.Context, key string, field string) (string, error) {
-	i, ok := r.dicts[key]
-	if ok == false {
-		i = make(map[string]string)
-	}
-	v, ok := i[field]
-	if ok == false {
-		v = ""
-	}
-	return v, nil
-}
-
-func (r *BackendMock) HGetAll(ctx context.Context, key string) (map[string]string, error) {
-	i, ok := r.dicts[key]
-	if ok == false {
-		i = make(map[string]string)
-	}
-
-	return i, nil
-}
-
-func (r *BackendMock) HDel(ctx context.Context, key string, field string) (int64, error) { // int8
-	i, ok := r.dicts[key]
-	if ok == false {
-		return 1, nil
-	}
-
-	_, ok = i[field]
-	if ok {
-		delete(i, field)
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (r *BackendMock) LPush(ctx context.Context, key string, value []byte) (int64, error) {
-	log.Debug().Str("key", key).Str("value", string(value)).Msg("pushing to queue")
-	_, ok := r.lists[key]
-	if ok == false {
-		r.lists[key] = make([]string, 0)
-	}
-	r.lists[key] = append(r.lists[key], string(value))
-	log.Debug().Int("len", len(r.lists[key])).Msg("length after adding")
-	return 1, nil
-}
-
-func (r *BackendMock) BLPop(ctx context.Context, timeout time.Duration, keys ...string) ([]string, error) {
+func (r *BackendMock) Next(ctx context.Context, timeout time.Duration) (Envelope, error) {
 	start, now := time.Now().Unix(), time.Now().Unix()
-	log.Debug().Int("length", len(r.lists[keys[0]])).Msg("debug") //
-	for now < start+int64(timeout/1000000000) {                   // convert from nanoseconds to seconds
+	for now < start+int64(timeout/1000000000) { // convert from nanoseconds to seconds
 		now = time.Now().Unix()
-		for _, key := range keys {
-			i, ok := r.lists[key]
-			if ok == false {
-				continue
-			}
-			if len(key) > 0 {
-				value := i[len(i)-1]
-				r.lists[key] = i[:len(i)-1] // pop the element
-				return []string{key, value}, nil
-			}
+		if len(r.locals) > 0 {
+			f, rest := r.locals[0], r.locals[1:]
+			r.locals = rest
+			return Envelope{
+				Tag:     Local,
+				Message: f,
+			}, nil
+		}
+		if len(r.remotes) > 0 {
+			f, rest := r.remotes[0], r.remotes[1:]
+			r.remotes = rest
+			return Envelope{
+				Tag:     Remote,
+				Message: f,
+			}, nil
+		}
+		if len(r.replies) > 0 {
+			f, rest := r.replies[0], r.replies[1:]
+			r.replies = rest
+			return Envelope{
+				Tag:     Reply,
+				Message: f,
+			}, nil
 		}
 
 	}
-	return nil, redis.Nil
+	return Envelope{}, redis.Nil
 }
 
-func (r *BackendMock) Incr(ctx context.Context, key string) (int64, error) {
-	_, ok := r.ints[key]
-	if ok == false {
-		r.ints[key] = 0
-	}
-	r.ints[key]++
-	return r.ints[key], nil
+func (r *BackendMock) QueueReply(ctx context.Context, msg Message) error {
+	r.replies = append(r.replies, msg)
+	return nil
 }
 
-func (r *BackendMock) HSet(ctx context.Context, key string, field string, value []byte) (int64, error) {
-	_, ok := r.dicts[key]
-	if ok == false {
-		r.dicts[key] = make(map[string]string)
-	}
-
-	r.dicts[key][field] = string(value)
-	return 1, nil
+func (r *BackendMock) QueueRemote(ctx context.Context, msg Message) error {
+	r.remotes = append(r.remotes, msg)
+	return nil
 }
 
-func (r *BackendMock) Get(ctx context.Context, key string) (int64, error) {
-	_, ok := r.ints[key]
-	if ok == false {
-		r.ints[key] = 0
+func (r *BackendMock) IncrementID(ctx context.Context, id int) (int64, error) {
+	old, ok := r.ids[id]
+	if !ok {
+		old = 0
 	}
-	r.ints[key]++
-	return r.ints[key], nil
+	r.ids[id] = old + 1
+	return int64(old), nil
+}
+
+func (r *BackendMock) PushToBacklog(ctx context.Context, msg Message, id string) error {
+	r.backlog[id] = msg
+	return nil
+}
+
+func (r *BackendMock) PopMessageFromBacklog(ctx context.Context, id string) (Message, error) {
+	msg, ok := r.backlog[id]
+	if !ok {
+		msg = Message{}
+		return msg, ErrNotAvailable
+	}
+
+	return msg, nil
+}
+
+func (r *BackendMock) QueueCommand(ctx context.Context, msg Message) error {
+	cmd := msg.Command
+	r.commandMsgs[cmd] = append(r.commandMsgs[cmd], msg)
+	return nil
+}
+
+func (r *BackendMock) PushProcessedMessage(ctx context.Context, msg Message) error {
+	r.commandReplies[msg.Retqueue] = append(r.commandReplies[msg.Retqueue], msg)
+	return nil
+}
+
+func (r *BackendMock) QueueRetry(ctx context.Context, msg Message) error {
+	r.retries = append(r.retries, msg)
+	return nil
+}
+
+func (r *BackendMock) PopRetryMessages(ctx context.Context, olderThan time.Duration) ([]Message, error) {
+	newlist := make([]Message, 0)
+	now := time.Now().Unix()
+	msgs := []Message{}
+
+	for _, msg := range r.retries {
+		if now > msg.Epoch+int64(olderThan/time.Second) {
+			msgs = append(msgs, msg)
+		} else {
+			newlist = append(newlist, msg)
+		}
+	}
+	r.retries = newlist
+	return msgs, nil
+}
+
+func (r *BackendMock) PopExpiredBacklogMessages(ctx context.Context) ([]Message, error) {
+	newbacklog := make(map[string]Message)
+	msgs := []Message{}
+
+	now := time.Now().Unix()
+	for key, msg := range r.backlog {
+
+		if msg.Epoch+msg.Expiration < now {
+			msg.ID = key
+			msgs = append(msgs, msg)
+		} else {
+			newbacklog[key] = msg
+		}
+	}
+	r.backlog = newbacklog
+	return msgs, nil
 }
 
 type ResolverMock struct {
-	twin map[int]*TwinCommunicationMock
+	twin map[int]*TwinClientMock
 }
 
 func NewResolverMock() ResolverMock {
 	r := ResolverMock{
-		twin: make(map[int]*TwinCommunicationMock),
+		twin: make(map[int]*TwinClientMock),
 	}
 	return r
 }
 
-type TwinCommunicationMock struct {
-	remote [][]byte
-	reply  [][]byte
+type TwinClientMock struct {
+	remote []Message
+	reply  []Message
 	timeID int
 }
 
-func (r ResolverMock) Resolve(timeID int) (TwinCommunicationChannelInterace, error) {
+func (r ResolverMock) Resolve(timeID int) (TwinClient, error) {
 	log.Debug().Int("twin", timeID).Msg("resolving mock timeID")
 	e, ok := r.twin[timeID]
 	if ok == false {
-		e = &TwinCommunicationMock{
+		e = &TwinClientMock{
 			timeID: timeID,
-			remote: make([][]byte, 0),
-			reply:  make([][]byte, 0),
+			remote: make([]Message, 0),
+			reply:  make([]Message, 0),
 		}
 		r.twin[timeID] = e
 	}
 	return e, nil
 }
 
-func (c *TwinCommunicationMock) SendRemote(data []byte) error {
+func (c *TwinClientMock) SendRemote(data Message) error {
 	log.Debug().Int("twin", c.timeID).Msg("sending remote")
 	c.remote = append(c.remote, data)
 	return nil
 }
 
-func (c *TwinCommunicationMock) SendReply(data []byte) error {
+func (c *TwinClientMock) SendReply(data Message) error {
 	c.reply = append(c.reply, data)
 	return nil
 }
-func (c *TwinCommunicationMock) PopRemote() []byte {
+func (c *TwinClientMock) PopRemote() Message {
 	last := c.remote[len(c.remote)-1]
 	c.remote = c.remote[:len(c.remote)-1]
 	return last
 }
 
-func (c *TwinCommunicationMock) PopReply() []byte {
+func (c *TwinClientMock) PopReply() Message {
 	last := c.reply[len(c.reply)-1]
 	c.reply = c.reply[:len(c.reply)-1]
 	return last
@@ -179,10 +210,8 @@ func setup() (a App, s BackendMock, r ResolverMock) {
 	backend := NewBackendMock()
 	resolver := NewResolverMock()
 	app := App{
-		debug:    true,
-		redis:    backend,
+		backend:  backend,
 		twin:     1,
-		ctx:      context.Background(),
 		resolver: resolver,
 	}
 
@@ -192,7 +221,7 @@ func setup() (a App, s BackendMock, r ResolverMock) {
 func TestHandleFromLocalPrepareItem(t *testing.T) {
 	app, _, resolver := setup()
 	secondTwin, _ := resolver.Resolve(2)
-	secondTwinMock := secondTwin.(*TwinCommunicationMock)
+	secondTwinMock := secondTwin.(*TwinClientMock)
 	msg := Message{
 		Version:    1,
 		ID:         "",
@@ -207,27 +236,25 @@ func TestHandleFromLocalPrepareItem(t *testing.T) {
 		Epoch:      time.Now().Unix(),
 		Err:        "",
 	}
-	err := app.handleFromLocalPrepareItem(msg, 2)
+	err := app.handleFromLocalItem(context.TODO(), msg, 2)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
 	log.Debug().Int("len_twin_remote_2:", len(secondTwinMock.remote)).Int("len_twin_reply_2:", len(secondTwinMock.reply)).Msg("queue data")
 	received := secondTwinMock.PopRemote()
-	recmsg := Message{}
-	json.Unmarshal(received, &recmsg)
-	assert.Equal(t, recmsg.Retqueue, "msgbus.system.reply")
-	assert.Equal(t, recmsg.Epoch, msg.Epoch)
-	assert.Equal(t, recmsg.Command, msg.Command)
-	assert.Equal(t, recmsg.Retry, msg.Retry)
-	assert.Equal(t, recmsg.Data, msg.Data)
+	assert.Equal(t, received.Retqueue, "msgbus.system.reply")
+	assert.Equal(t, received.Epoch, msg.Epoch)
+	assert.Equal(t, received.Command, msg.Command)
+	assert.Equal(t, received.Retry, msg.Retry)
+	assert.Equal(t, received.Data, msg.Data)
 }
 
 func TestHandleFromLocal(t *testing.T) {
 	app, _, resolver := setup()
 	secondTwin, _ := resolver.Resolve(2)
-	secondTwinMock := secondTwin.(*TwinCommunicationMock)
+	secondTwinMock := secondTwin.(*TwinClientMock)
 	fourthTwin, _ := resolver.Resolve(4)
-	fourthTwinMock := fourthTwin.(*TwinCommunicationMock)
+	fourthTwinMock := fourthTwin.(*TwinClientMock)
 	msg := Message{
 		Version:    1,
 		ID:         "",
@@ -242,30 +269,22 @@ func TestHandleFromLocal(t *testing.T) {
 		Epoch:      time.Now().Unix(),
 		Err:        "",
 	}
-	msgString, err := json.Marshal(msg)
-	if err != nil {
-		log.Err(err).Msg("error while parsing json")
-	}
-	err = app.handleFromLocal(string(msgString))
+	err := app.handleFromLocal(context.TODO(), msg)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
 	received := secondTwinMock.PopRemote()
-	recmsg := Message{}
-	json.Unmarshal(received, &recmsg)
-	assert.Equal(t, recmsg.Retqueue, "msgbus.system.reply")
-	assert.Equal(t, recmsg.Epoch, msg.Epoch)
-	assert.Equal(t, recmsg.Command, msg.Command)
-	assert.Equal(t, recmsg.Retry, msg.Retry)
-	assert.Equal(t, recmsg.Data, msg.Data)
+	assert.Equal(t, received.Retqueue, "msgbus.system.reply")
+	assert.Equal(t, received.Epoch, msg.Epoch)
+	assert.Equal(t, received.Command, msg.Command)
+	assert.Equal(t, received.Retry, msg.Retry)
+	assert.Equal(t, received.Data, msg.Data)
 	received = fourthTwinMock.PopRemote()
-	recmsg = Message{}
-	json.Unmarshal(received, &recmsg)
-	assert.Equal(t, recmsg.Retqueue, "msgbus.system.reply")
-	assert.Equal(t, recmsg.Epoch, msg.Epoch)
-	assert.Equal(t, recmsg.Command, msg.Command)
-	assert.Equal(t, recmsg.Retry, msg.Retry)
-	assert.Equal(t, recmsg.Data, msg.Data)
+	assert.Equal(t, received.Retqueue, "msgbus.system.reply")
+	assert.Equal(t, received.Epoch, msg.Epoch)
+	assert.Equal(t, received.Command, msg.Command)
+	assert.Equal(t, received.Retry, msg.Retry)
+	assert.Equal(t, received.Data, msg.Data)
 }
 
 func TestHandleFromRemote(t *testing.T) {
@@ -284,20 +303,20 @@ func TestHandleFromRemote(t *testing.T) {
 		Epoch:      time.Now().Unix(),
 		Err:        "",
 	}
-	msgString, err := json.Marshal(msg)
-	if err != nil {
-		log.Err(err).Msg("error while parsing json")
-	}
-	err = app.handleFromRemote(string(msgString))
+	err := app.handleFromRemote(context.TODO(), msg)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
-	res, err := backend.BLPop(app.ctx, 1000000000, "msgbus.griddb.twins.get")
-	if err != nil {
-		log.Err(err).Msg("didn't find anything in msgbus.griddb.twins.get")
+	q, ok := backend.commandMsgs["griddb.twins.get"]
+	if !ok || len(q) == 0 {
+		log.Err(err).Msg("didn't find command in griddb.twins.get")
 	}
-	assert.Equal(t, res[0], "msgbus.griddb.twins.get")
-	assert.Equal(t, res[1], string(msgString))
+	res := q[0]
+	assert.Equal(t, res.Retqueue, msg.Retqueue)
+	assert.Equal(t, res.Epoch, msg.Epoch)
+	assert.Equal(t, res.Command, msg.Command)
+	assert.Equal(t, res.Retry, msg.Retry)
+	assert.Equal(t, res.Data, msg.Data)
 }
 
 func TestHandleFromReplyForMe(t *testing.T) {
@@ -327,24 +346,20 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	update := msg
 	update.Retqueue = "msgbug.system.reply"
 	update.Data = base64.StdEncoding.EncodeToString([]byte("result"))
-	msgString, err := json.Marshal(msg)
-	if err != nil {
-		log.Err(err).Msg("failed to marshal message")
-	}
-	backend.HSet(app.ctx, "msgbus.system.backlog", msg.ID, msgString)
-	err = app.handleFromReplyForMe(update)
+	backend.PushToBacklog(context.TODO(), msg, msg.ID)
+	err := app.handleFromReplyForMe(context.TODO(), update)
 	if err != nil {
 		log.Err(err).Msg("error while handling from local perpare item")
 	}
 	update.Retqueue = msg.Retqueue
-	res, err := backend.BLPop(app.ctx, 1000000000, update.Retqueue)
-	if err != nil {
+	q := backend.commandReplies[update.Retqueue]
+	if len(q) == 0 {
 		log.Err(err).Msg("didn't find anything in msgbus.griddb.twins.get")
 	}
-	updateString, err := json.Marshal(update)
-	if err != nil {
-		log.Err(err).Msg("error while parsing json")
-	}
-	assert.Equal(t, res[0], update.Retqueue)
-	assert.Equal(t, res[1], string(updateString))
+	res := q[0]
+	assert.Equal(t, res.Retqueue, update.Retqueue)
+	assert.Equal(t, res.Epoch, update.Epoch)
+	assert.Equal(t, res.Command, update.Command)
+	assert.Equal(t, res.Retry, update.Retry)
+	assert.Equal(t, res.Data, update.Data)
 }
