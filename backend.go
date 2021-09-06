@@ -233,7 +233,9 @@ func (r *RedisBackend) PopExpiredBacklogMessages(ctx context.Context) ([]Message
 			log.Error().Err(errors.Wrap(err, "couldn't parse json")).Msg("handling backlog queue")
 			continue
 		}
-
+		if msg.Expiration == 0 {
+			msg.Expiration = 3600
+		}
 		if msg.Epoch+msg.Expiration < now {
 			if _, err := r.client.HDel(ctx, "msgbus.system.backlog", key).Result(); err != nil {
 				log.Error().Err(err).Msg("error deleting backlog expired message")
