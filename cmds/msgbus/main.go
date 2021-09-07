@@ -1,17 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/threefoldtech/rmb-go/pkg/rmb"
+	"github.com/threefoldtech/rmb"
 )
 
 type flags struct {
@@ -21,49 +23,57 @@ type flags struct {
 	redis     string
 }
 
+func (f *flags) Valid() error {
+	if f.twin == -1 {
+		return fmt.Errorf("twin id is required")
+	}
+	return nil
+}
+
 func main() {
-	f := flags{}
+	var f flags
 	flag.IntVar(&f.twin, "twin", -1, "the twin id")
-	flag.StringVar(&f.substrate, "substrate", "https://explorer.devnet.grid.tf/", "substrate url")
+	flag.StringVar(&f.substrate, "substrate", "wss://explorer.devnet.grid.tf/ws", "substrate url")
 	flag.StringVar(&f.debug, "log-level", "debug", "log level [debug|info|warn|error|fatal|panic]")
 	flag.StringVar(&f.redis, "redis", "127.0.0.1:6379", "redis url")
 
 	flag.Parse()
+
+	if err := f.Valid(); err != nil {
+		flag.PrintDefaults()
+		log.Fatal().Err(err).Msg("invalid arguments")
+	}
+
 	setupLogging(f.debug)
-	if f.twin == -1 {
-		println("twin flag is required")
-		return
-	}
 
-	s, err := createServer(f)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := s.ListenAndServe(); err != nil {
-		if err == http.ErrServerClosed {
-			log.Info().Msg("server stopped gracefully")
-		} else {
-			log.Error().Err(err).Msg("server stopped unexpectedly")
-		}
+	if err := app(f); err != nil {
+		log.Fatal().Msg(err.Error())
 	}
 }
 
-func createServer(f flags) (*http.Server, error) {
-	router := mux.NewRouter()
-	debug := false
-	substrate := f.substrate
-	redis := f.redis
-	twin := f.twin
-	if f.debug == "all" {
-		debug = true
+func app(f flags) error {
+	s, err := rmb.NewServer(f.substrate, f.redis, f.twin)
+	if err != nil {
+		return errors.Wrap(err, "failed to create server")
 	}
 
-	rmb.Setup(router, debug, substrate, redis, twin)
-	return &http.Server{
-		Handler: router,
-		Addr:    "0.0.0.0:8051",
-	}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		<-ch
+		log.Info().Msg("shutting down...")
+		cancel()
+	}()
+
+	if err := s.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		return errors.Wrap(err, "server exited unexpectedly")
+	}
+
+	return nil
 }
 
 const (

@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/threefoldtech/rmb-go/pkg/client"
+	"github.com/threefoldtech/rmb/client"
 )
 
-func test_client() {
+func testClient() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "127.0.0.1:6379",
 		Password: "", // no password set
@@ -19,16 +19,16 @@ func test_client() {
 		Ctx:    context.Background(),
 	}
 
-	msg_twin := client.Prepare("griddb.twins.get", []int{9}, 0, 2)
-	mb.Send(msg_twin, "9")
-	response_twin := mb.Read(msg_twin)
-	fmt.Println("Result Received for reply: $msg_twin.retqueue")
-	for _, result := range response_twin {
+	msgTwin := client.Prepare("griddb.twins.get", []int{9}, 0, 2)
+	mb.Send(msgTwin, "9")
+	responseTwin := mb.Read(msgTwin)
+	fmt.Printf("Result Received for reply:%s\n", msgTwin.Retqueue)
+	for _, result := range responseTwin {
 		fmt.Println(result)
 	}
 
 }
 
 func main() {
-	test_client()
+	testClient()
 }
