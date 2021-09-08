@@ -2,6 +2,7 @@ package rmb
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -39,6 +40,10 @@ type Backend interface {
 	QueueRemote(ctx context.Context, msg Message) error
 
 	IncrementID(ctx context.Context, id int) (int64, error)
+
+	PushToLocal(ctx context.Context, msg Message) error
+
+	GetMessageReply(ctx context.Context, msg Message) ([]Message, error)
 
 	PushToBacklog(ctx context.Context, msg Message, id string) error
 	PopMessageFromBacklog(ctx context.Context, id string) (Message, error)
@@ -126,6 +131,54 @@ func (r *RedisBackend) IncrementID(ctx context.Context, id int) (int64, error) {
 		return 0, err
 	}
 	return cnt, nil
+}
+
+func (r *RedisBackend) GetMessageReply(ctx context.Context, msg Message) ([]Message, error) {
+	log.Info().Str("return_queue", msg.Retqueue).Msg("Waiting reply")
+	responses := []Message{}
+	retQueueLen, err := r.client.LLen(ctx, msg.Retqueue).Result()
+	if err != nil {
+		log.Error().Err(err).Msg("error fetching from redis")
+		return responses, err
+	}
+	// check if all destinations replay
+	if int(retQueueLen) < len(msg.TwinDst) {
+		return nil, errors.New("The message not handled yet, it is in progress.")
+	} else {
+		// loop and return the list
+		results, err := r.client.LRange(ctx, msg.Retqueue, 0, -1).Result()
+		if err != nil {
+			log.Error().Err(err).Msg("error fetching from redis")
+			return responses, err
+		}
+		for _, msgJSON := range results {
+			responseMsg := Message{}
+			if err := json.Unmarshal([]byte(msgJSON), &responseMsg); err != nil {
+				log.Error().Err(err).Msg("error decoding entry from redis")
+				break
+			}
+			decoded, err := base64.StdEncoding.DecodeString(responseMsg.Data)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to decode response message data")
+			}
+			responseMsg.Data = string(decoded)
+			responses = append(responses, responseMsg)
+		}
+		return responses, nil
+	}
+}
+
+func (r *RedisBackend) PushToLocal(ctx context.Context, msg Message) error {
+	bytes, err := json.Marshal(msg)
+	if err != nil {
+		return errors.Wrap(err, "failed to encode into json")
+	}
+
+	_, err = r.client.LPush(ctx, "msgbus.system.local", bytes).Result()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *RedisBackend) PushToBacklog(ctx context.Context, msg Message, id string) error {
