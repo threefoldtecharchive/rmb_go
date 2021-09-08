@@ -270,6 +270,7 @@ func (a *App) runServer(ctx context.Context) {
 		if err := envelope.Valid(); err != nil {
 			log.Error().Err(err).Msg("received invalid message")
 			a.respondWithError(ctx, envelope.Message, errors.Wrap(err, "received invalid message"))
+			continue
 		}
 
 		switch envelope.Tag {
