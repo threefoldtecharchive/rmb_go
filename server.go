@@ -326,7 +326,11 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
-	msg.TwinSrc = a.twin
+
+	if len(msg.TwinDst) > 1 || msg.TwinDst[0] != a.twin {
+		errorReply(w, http.StatusBadRequest, "couldn't parse json")
+		return
+	}
 	err := a.backend.PushToLocal(r.Context(), msg)
 	fmt.Println(err)
 	if err != nil {
@@ -340,6 +344,7 @@ func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var msg Message
+	msg.TwinSrc = a.twin
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
@@ -372,7 +377,7 @@ func (a *App) Serve(root context.Context) error {
 	return nil
 }
 
-func NewServer(substrate string, redisServer string, twin int, httpFlag bool) (*App, error) {
+func NewServer(substrate string, redisServer string, twin int) (*App, error) {
 	router := mux.NewRouter()
 	backend := NewRedisBackend(redisServer)
 	resolver, err := NewTwinResolver(substrate)
@@ -390,9 +395,8 @@ func NewServer(substrate string, redisServer string, twin int, httpFlag bool) (*
 	}
 	router.HandleFunc("/zbus-reply", a.reply)
 	router.HandleFunc("/zbus-remote", a.remote)
-	if httpFlag {
-		router.HandleFunc("/zbus-cmd", a.run)
-		router.HandleFunc("/zbus-result", a.getResult)
-	}
+	router.HandleFunc("/zbus-cmd", a.run)
+	router.HandleFunc("/zbus-result", a.getResult)
+
 	return a, nil
 }

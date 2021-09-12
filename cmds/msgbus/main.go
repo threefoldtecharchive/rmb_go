@@ -37,7 +37,6 @@ func main() {
 	flag.StringVar(&f.substrate, "substrate", "wss://explorer.devnet.grid.tf/ws", "substrate url")
 	flag.StringVar(&f.debug, "log-level", "debug", "log level [debug|info|warn|error|fatal|panic]")
 	flag.StringVar(&f.redis, "redis", "127.0.0.1:6379", "redis url")
-	flag.BoolVar(&f.http, "http", false, "Allow rmb to accept http requests")
 
 	flag.Parse()
 
@@ -54,7 +53,7 @@ func main() {
 }
 
 func app(f flags) error {
-	s, err := rmb.NewServer(f.substrate, f.redis, f.twin, f.http)
+	s, err := rmb.NewServer(f.substrate, f.redis, f.twin)
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
 	}
