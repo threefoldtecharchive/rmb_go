@@ -21,7 +21,6 @@ type flags struct {
 	substrate string
 	debug     string
 	redis     string
-	http      bool
 }
 
 func (f *flags) Valid() error {

@@ -7,25 +7,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
-
-type Message struct {
-	Version    int    `json:"ver"`
-	ID         string `json:"uid"`
-	Command    string `json:"cmd"`
-	Expiration int64  `json:"exp"`
-	Retry      int    `json:"try"`
-	Data       string `json:"dat"`
-	TwinSrc    int    `json:"src"`
-	TwinDst    []int  `json:"dst"`
-	Retqueue   string `json:"ret"`
-	Schema     string `json:"shm"`
-	Epoch      int64  `json:"now"`
-	Err        string `json:"err"`
-}
 
 func (a *Message) Valid() error {
 	if a.Version != 1 {
@@ -45,13 +31,6 @@ func (a *Message) Valid() error {
 	}
 
 	return nil
-}
-
-type App struct {
-	backend  Backend
-	twin     int
-	resolver TwinResolver
-	server   *http.Server
 }
 
 func errorReply(w http.ResponseWriter, status int, message string) {
@@ -320,36 +299,44 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) run(w http.ResponseWriter, r *http.Request) {
-	// hint: it's user responsability to send uniq id
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
 
-	if len(msg.TwinDst) > 1 || msg.TwinDst[0] != a.twin {
-		errorReply(w, http.StatusBadRequest, "couldn't parse json")
-		return
-	}
+	msg.TwinSrc = a.twin
+	msg.Retqueue = uuid.New().String()
+
+	// if len(msg.TwinDst) > 1 || msg.TwinDst[0] != a.twin {
+	// 	errorReply(w, http.StatusBadRequest, "couldn't parse json")
+	// 	return
+	// }
+
 	err := a.backend.PushToLocal(r.Context(), msg)
 	fmt.Println(err)
 	if err != nil {
 		errorReply(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	successReply(w)
+
+	ret := MessageIdentifier{
+		Retqueue: msg.Retqueue,
+	}
+
+	json.NewEncoder(w).Encode(&ret)
 }
 
 func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var msg Message
-	msg.TwinSrc = a.twin
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+	var msgIdentifier MessageIdentifier
+	if err := json.NewDecoder(r.Body).Decode(&msgIdentifier); err != nil {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
-	response, err := a.backend.GetMessageReply(r.Context(), msg)
+
+	response, err := a.backend.GetMessageReply(r.Context(), msgIdentifier)
 	if err != nil {
 		errorReply(w, http.StatusInternalServerError, err.Error())
 		return

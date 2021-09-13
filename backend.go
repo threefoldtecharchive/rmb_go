@@ -43,7 +43,7 @@ type Backend interface {
 
 	PushToLocal(ctx context.Context, msg Message) error
 
-	GetMessageReply(ctx context.Context, msg Message) ([]Message, error)
+	GetMessageReply(ctx context.Context, msg MessageIdentifier) ([]Message, error)
 
 	PushToBacklog(ctx context.Context, msg Message, id string) error
 	PopMessageFromBacklog(ctx context.Context, id string) (Message, error)
@@ -133,7 +133,7 @@ func (r *RedisBackend) IncrementID(ctx context.Context, id int) (int64, error) {
 	return cnt, nil
 }
 
-func (r *RedisBackend) GetMessageReply(ctx context.Context, msg Message) ([]Message, error) {
+func (r *RedisBackend) GetMessageReply(ctx context.Context, msg MessageIdentifier) ([]Message, error) {
 	log.Info().Str("return_queue", msg.Retqueue).Msg("Waiting reply")
 	responses := []Message{}
 	retQueueLen, err := r.client.LLen(ctx, msg.Retqueue).Result()
@@ -141,8 +141,8 @@ func (r *RedisBackend) GetMessageReply(ctx context.Context, msg Message) ([]Mess
 		log.Error().Err(err).Msg("error fetching from redis")
 		return responses, err
 	}
-	// check if all destinations replay
-	if int(retQueueLen) < len(msg.TwinDst) {
+	// TODO: check if the message ready
+	if int(retQueueLen) < 1 {
 		return nil, errors.New("The message not handled yet, it is in progress.")
 	} else {
 		// loop and return the list
