@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,11 @@ func (a *Message) Valid() error {
 	}
 
 	return nil
+}
+
+func IsValidUUID(uuid string) bool {
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+	return r.MatchString(uuid)
 }
 
 func errorReply(w http.ResponseWriter, status int, message string) {
@@ -308,14 +314,10 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 	msg.TwinSrc = a.twin
 	msg.Retqueue = uuid.New().String()
 
-	// if len(msg.TwinDst) > 1 || msg.TwinDst[0] != a.twin {
-	// 	errorReply(w, http.StatusBadRequest, "couldn't parse json")
-	// 	return
-	// }
-
 	err := a.backend.PushToLocal(r.Context(), msg)
-	fmt.Println(err)
+
 	if err != nil {
+		log.Error().Err(err).Msg("Can't push the message to local")
 		errorReply(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -336,9 +338,14 @@ func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if valid := IsValidUUID(msgIdentifier.Retqueue); !valid {
+		errorReply(w, http.StatusBadRequest, "Invalid Retqueue, it should be a valid UUID")
+		return
+	}
+
 	response, err := a.backend.GetMessageReply(r.Context(), msgIdentifier)
 	if err != nil {
-		errorReply(w, http.StatusInternalServerError, err.Error())
+		errorReply(w, http.StatusNotFound, err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(&response)

@@ -18,7 +18,6 @@ type Message struct {
 }
 
 type MessageIdentifier struct {
-	ID       string `json:"id"`
 	Retqueue string `json:"retqueue"`
 }
 
