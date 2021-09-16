@@ -345,7 +345,7 @@ func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 
 	response, err := a.backend.GetMessageReply(r.Context(), msgIdentifier)
 	if err != nil {
-		errorReply(w, http.StatusNotFound, err.Error())
+		errorReply(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(&response)

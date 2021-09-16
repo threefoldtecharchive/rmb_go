@@ -147,10 +147,12 @@ func (r *RedisBackend) GetMessageReply(ctx context.Context, msg MessageIdentifie
 	for _, msgJSON := range results {
 		responseMsg := Message{}
 		if err := json.Unmarshal([]byte(msgJSON), &responseMsg); err != nil {
+			log.Error().Err(err).Msg("error unmarshalling json")
 			continue
 		}
 		decoded, err := base64.StdEncoding.DecodeString(responseMsg.Data)
 		if err != nil {
+			log.Error().Err(err).Msg("error decoding message data")
 			continue
 		}
 		responseMsg.Data = string(decoded)
