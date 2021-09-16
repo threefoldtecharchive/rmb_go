@@ -5,27 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
-
-type Message struct {
-	Version    int    `json:"ver"`
-	ID         string `json:"uid"`
-	Command    string `json:"cmd"`
-	Expiration int64  `json:"exp"`
-	Retry      int    `json:"try"`
-	Data       string `json:"dat"`
-	TwinSrc    int    `json:"src"`
-	TwinDst    []int  `json:"dst"`
-	Retqueue   string `json:"ret"`
-	Schema     string `json:"shm"`
-	Epoch      int64  `json:"now"`
-	Err        string `json:"err"`
-}
 
 func (a *Message) Valid() error {
 	if a.Version != 1 {
@@ -47,11 +34,9 @@ func (a *Message) Valid() error {
 	return nil
 }
 
-type App struct {
-	backend  Backend
-	twin     int
-	resolver TwinResolver
-	server   *http.Server
+func IsValidUUID(uuid string) bool {
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+	return r.MatchString(uuid)
 }
 
 func errorReply(w http.ResponseWriter, status int, message string) {
@@ -319,6 +304,54 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 	}
 	successReply(w)
 }
+
+func (a *App) run(w http.ResponseWriter, r *http.Request) {
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		errorReply(w, http.StatusBadRequest, "couldn't parse json")
+		return
+	}
+
+	msg.TwinSrc = a.twin
+	msg.Retqueue = uuid.New().String()
+
+	err := a.backend.PushToLocal(r.Context(), msg)
+
+	if err != nil {
+		log.Error().Err(err).Msg("Can't push the message to local")
+		errorReply(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	ret := MessageIdentifier{
+		Retqueue: msg.Retqueue,
+	}
+
+	json.NewEncoder(w).Encode(&ret)
+}
+
+func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var msgIdentifier MessageIdentifier
+	if err := json.NewDecoder(r.Body).Decode(&msgIdentifier); err != nil {
+		errorReply(w, http.StatusBadRequest, "couldn't parse json")
+		return
+	}
+
+	if valid := IsValidUUID(msgIdentifier.Retqueue); !valid {
+		errorReply(w, http.StatusBadRequest, "Invalid Retqueue, it should be a valid UUID")
+		return
+	}
+
+	response, err := a.backend.GetMessageReply(r.Context(), msgIdentifier)
+	if err != nil {
+		errorReply(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	json.NewEncoder(w).Encode(&response)
+}
+
 func (a *App) Serve(root context.Context) error {
 	ctx, cancel := context.WithCancel(root)
 	defer cancel()
@@ -357,5 +390,8 @@ func NewServer(substrate string, redisServer string, twin int) (*App, error) {
 	}
 	router.HandleFunc("/zbus-reply", a.reply)
 	router.HandleFunc("/zbus-remote", a.remote)
+	router.HandleFunc("/zbus-cmd", a.run)
+	router.HandleFunc("/zbus-result", a.getResult)
+
 	return a, nil
 }
