@@ -48,4 +48,4 @@ test: verifiers build
 	go test -vet=off -v $(shell go list ./... )
 
 build:
-	cd cmds/msgbus && CGO_ENABLED=0 GOOS=linux go build -ldflags $(ldflags) -o msgbus
+	cd cmds/msgbusd && CGO_ENABLED=0 GOOS=linux go build -ldflags $(ldflags) -o msgbusd
