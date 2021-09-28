@@ -1,5 +1,6 @@
 PWD := $(shell pwd)
 GOPATH := $(shell go env GOPATH)
+ldflags = '-w -s -extldflags "-static"'
 
 all: build
 
@@ -47,4 +48,4 @@ test: verifiers build
 	go test -vet=off -v $(shell go list ./... )
 
 build:
-	@CGO_ENABLED=0 go build -v ./...
+	cd cmds/msgbus && CGO_ENABLED=0 GOOS=linux go build -ldflags $(ldflags) -o msgbus
