@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/threefoldtech/rmb-go"
+	"github.com/threefoldtech/go-rmb"
 )
 
 type flags struct {

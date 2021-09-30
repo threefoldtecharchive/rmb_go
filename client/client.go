@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-	"github.com/threefoldtech/rmb-go"
+	"github.com/threefoldtech/go-rmb"
 )
 
 type MessageBusClient struct {
