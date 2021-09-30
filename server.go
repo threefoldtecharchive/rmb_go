@@ -179,8 +179,6 @@ func (a *App) handleFromReply(ctx context.Context, msg Message) error {
 }
 
 func (a *App) handleRetry(ctx context.Context) error {
-	log.Debug().Msg("checking retries")
-
 	entries, err := a.backend.PopRetryMessages(ctx, 5*time.Second)
 	if err != nil {
 		return errors.Wrap(err, "couldn't read retry messages")
@@ -200,8 +198,6 @@ func (a *App) handleRetry(ctx context.Context) error {
 }
 
 func (a *App) handleScrubbing(ctx context.Context) error {
-	log.Debug().Msg("scrubbing")
-
 	entries, err := a.backend.PopExpiredBacklogMessages(ctx)
 
 	if err != nil {
