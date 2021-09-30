@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/threefoldtech/rmb"
-	"github.com/threefoldtech/rmb/client"
+	"github.com/threefoldtech/rmb-go"
+	"github.com/threefoldtech/rmb-go/client"
 )
 
 func testClient() {
