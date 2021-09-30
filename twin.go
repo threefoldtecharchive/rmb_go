@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/rs/zerolog/log"
-	"github.com/threefoldtech/zos/pkg/substrate"
+	"github.com/threefoldtech/substrate-client"
 )
 
 type TwinResolver interface {
