@@ -57,16 +57,6 @@ type Backend interface {
 	PopExpiredBacklogMessages(ctx context.Context) ([]Message, error)
 }
 
-type BackendInterface interface {
-	HGet(ctx context.Context, key string, field string) (string, error)
-	HGetAll(ctx context.Context, key string) (map[string]string, error)
-	HDel(ctx context.Context, key string, field string) (int64, error)
-	LPush(ctx context.Context, key string, value []byte) (int64, error)
-	BLPop(ctx context.Context, timeout time.Duration, keys ...string) ([]string, error)
-	Incr(ctx context.Context, key string) (int64, error)
-	HSet(ctx context.Context, key string, field string, value []byte) (int64, error)
-}
-
 type RedisBackend struct {
 	// looks like it's implemented as a pool
 	client *redis.Client
@@ -94,7 +84,7 @@ func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelop
 	if err := json.Unmarshal([]byte(res[1]), &envelope); err != nil {
 		return envelope, err
 	}
-	log.Debug().Str("queue", string(res[0])).Str("content", res[1]).Msg("received a message on a queue")
+	log.Debug().Str("queue", string(res[0])).Msg("received a message on a queue")
 	envelope.Tag = tagsMap[res[0]]
 	return envelope, nil
 }
@@ -134,7 +124,7 @@ func (r *RedisBackend) IncrementID(ctx context.Context, id int) (int64, error) {
 }
 
 func (r *RedisBackend) GetMessageReply(ctx context.Context, msg MessageIdentifier) ([]Message, error) {
-	log.Info().Str("return_queue", msg.Retqueue).Msg("Waiting reply")
+	log.Debug().Str("return_queue", msg.Retqueue).Msg("Waiting reply")
 	responses := []Message{}
 
 	results, err := r.client.LRange(ctx, msg.Retqueue, 0, -1).Result()

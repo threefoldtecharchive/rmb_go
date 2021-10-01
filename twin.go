@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
+	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/substrate-client"
 )
 
 type TwinResolver interface {
-	Resolve(timeID int) (TwinClient, error)
+	Resolve(twin int) (TwinClient, error)
 }
 
 type TwinClient interface {
@@ -20,7 +22,12 @@ type TwinClient interface {
 	SendReply(msg Message) error
 }
 
-type TwinExplorerResolver struct {
+type cacheResolver struct {
+	TwinResolver
+	cache *cache.Cache
+}
+
+type substrateResolver struct {
 	client *substrate.Substrate
 }
 
@@ -36,18 +43,42 @@ func replyURL(timeIP string) string {
 	return fmt.Sprintf("http://%s:8051/zbus-reply", timeIP)
 }
 
-func NewTwinResolver(substrateURL string) (TwinResolver, error) {
+func NewCacheResolver(resolver TwinResolver, expiration time.Duration) TwinResolver {
+	return &cacheResolver{
+		TwinResolver: resolver,
+		cache:        cache.New(expiration, time.Minute),
+	}
+}
+
+func (c *cacheResolver) Resolve(twin int) (TwinClient, error) {
+	key := fmt.Sprint(twin)
+	cached, ok := c.cache.Get(key)
+	if ok {
+		log.Debug().Int("twin", twin).Msg("cache hit")
+		return cached.(TwinClient), nil
+	}
+
+	client, err := c.TwinResolver.Resolve(twin)
+	if err != nil {
+		return nil, err
+	}
+
+	c.cache.Set(key, client, cache.DefaultExpiration)
+	return client, nil
+}
+
+func NewSubstrateResolver(substrateURL string) (TwinResolver, error) {
 	client, err := substrate.NewSubstrate(substrateURL)
 	if err != nil {
 		return nil, err
 	}
 
-	return &TwinExplorerResolver{
+	return &substrateResolver{
 		client: client,
 	}, nil
 }
 
-func (r TwinExplorerResolver) Resolve(timeID int) (TwinClient, error) {
+func (r substrateResolver) Resolve(timeID int) (TwinClient, error) {
 	log.Debug().Int("twin", timeID).Msg("resolving twin")
 
 	twin, err := r.client.GetTwin(uint32(timeID))

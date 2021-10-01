@@ -130,7 +130,7 @@ func (a *App) handleFromRemote(ctx context.Context, msg Message) error {
 }
 
 func (a *App) handleFromReplyForMe(ctx context.Context, msg Message) error {
-	log.Info().Msg("message reply for me, fetching backlog")
+	log.Debug().Msg("message reply for me, fetching backlog")
 
 	original, err := a.backend.PopMessageFromBacklog(ctx, msg.ID)
 	if err != nil {
@@ -371,14 +371,14 @@ func (a *App) Serve(root context.Context) error {
 func NewServer(substrate string, redisServer string, twin int) (*App, error) {
 	router := mux.NewRouter()
 	backend := NewRedisBackend(redisServer)
-	resolver, err := NewTwinResolver(substrate)
+	resolver, err := NewSubstrateResolver(substrate)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
 	}
 	a := &App{
 		backend:  backend,
 		twin:     twin,
-		resolver: resolver,
+		resolver: NewCacheResolver(resolver, 5*time.Minute),
 		server: &http.Server{
 			Handler: router,
 			Addr:    "0.0.0.0:8051",
