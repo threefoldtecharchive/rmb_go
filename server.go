@@ -168,7 +168,7 @@ func (a *App) handleFromReplyForward(ctx context.Context, msg Message) error {
 
 func (a *App) handleFromReply(ctx context.Context, msg Message) error {
 
-	if msg.TwinDst[0] == a.twin {
+	if msg.TwinDst[0] == a.twin || msg.Proxy {
 		return a.handleFromReplyForMe(ctx, msg)
 
 	} else if msg.TwinSrc == a.twin {
@@ -308,7 +308,9 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg.TwinSrc = a.twin
+	if !msg.Proxy {
+		log.Warn().Err(err).Msg("The Message received over http request and proxy field false")
+	}
 	msg.Retqueue = uuid.New().String()
 
 	err := a.backend.PushToLocal(r.Context(), msg)
