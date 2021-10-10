@@ -308,9 +308,7 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !msg.Proxy {
-		log.Warn().Err(err).Msg("The Message received over http request and proxy field false")
-	}
+	msg.Proxy = true
 	msg.Retqueue = uuid.New().String()
 
 	err := a.backend.PushToLocal(r.Context(), msg)
