@@ -129,6 +129,16 @@ func (a *App) handleFromRemote(ctx context.Context, msg Message) error {
 	return a.backend.QueueCommand(ctx, msg)
 }
 
+func (a *App) handleFromReplyForProxy(ctx context.Context, msg Message) error {
+	log.Debug().Msg("message reply for proxy")
+
+	err := a.backend.PushProcessedMessage(ctx, msg)
+	if err != nil {
+		return errors.Wrap(err, "error pushing the reply message")
+	}
+	return nil
+}
+
 func (a *App) handleFromReplyForMe(ctx context.Context, msg Message) error {
 	log.Debug().Msg("message reply for me, fetching backlog")
 
@@ -168,9 +178,10 @@ func (a *App) handleFromReplyForward(ctx context.Context, msg Message) error {
 
 func (a *App) handleFromReply(ctx context.Context, msg Message) error {
 
-	if msg.TwinDst[0] == a.twin {
+	if msg.Proxy {
+		return a.handleFromReplyForProxy(ctx, msg)
+	} else if msg.TwinDst[0] == a.twin {
 		return a.handleFromReplyForMe(ctx, msg)
-
 	} else if msg.TwinSrc == a.twin {
 		return a.handleFromReplyForward(ctx, msg)
 	}
@@ -308,14 +319,11 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg.TwinSrc = a.twin
+	msg.Proxy = true
 	msg.Retqueue = uuid.New().String()
 
-	err := a.backend.PushToLocal(r.Context(), msg)
-
-	if err != nil {
-		log.Error().Err(err).Msg("Can't push the message to local")
-		errorReply(w, http.StatusInternalServerError, err.Error())
+	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
+		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
 		return
 	}
 
