@@ -41,8 +41,6 @@ type Backend interface {
 
 	IncrementID(ctx context.Context, id int) (int64, error)
 
-	PushToLocal(ctx context.Context, msg Message) error
-
 	GetMessageReply(ctx context.Context, msg MessageIdentifier) ([]Message, error)
 
 	PushToBacklog(ctx context.Context, msg Message, id string) error
@@ -152,18 +150,6 @@ func (r *RedisBackend) GetMessageReply(ctx context.Context, msg MessageIdentifie
 
 }
 
-func (r *RedisBackend) PushToLocal(ctx context.Context, msg Message) error {
-	bytes, err := json.Marshal(msg)
-	if err != nil {
-		return errors.Wrap(err, "failed to encode into json")
-	}
-
-	_, err = r.client.LPush(ctx, "msgbus.system.local", bytes).Result()
-	if err != nil {
-		return err
-	}
-	return nil
-}
 
 func (r *RedisBackend) PushToBacklog(ctx context.Context, msg Message, id string) error {
 	bytes, err := json.Marshal(msg)
