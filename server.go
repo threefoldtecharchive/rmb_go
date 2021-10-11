@@ -311,11 +311,8 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 	msg.Proxy = true
 	msg.Retqueue = uuid.New().String()
 
-	err := a.backend.PushToLocal(r.Context(), msg)
-
-	if err != nil {
-		log.Error().Err(err).Msg("Can't push the message to local")
-		errorReply(w, http.StatusInternalServerError, err.Error())
+	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
+		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
 		return
 	}
 
