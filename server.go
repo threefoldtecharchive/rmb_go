@@ -129,6 +129,16 @@ func (a *App) handleFromRemote(ctx context.Context, msg Message) error {
 	return a.backend.QueueCommand(ctx, msg)
 }
 
+func (a *App) handleFromReplyForProxy(ctx context.Context, msg Message) error {
+	log.Debug().Msg("message reply for proxy")
+
+	err := a.backend.PushProcessedMessage(ctx, msg)
+	if err != nil {
+		return errors.Wrap(err, "error pushing the reply message")
+	}
+	return nil
+}
+
 func (a *App) handleFromReplyForMe(ctx context.Context, msg Message) error {
 	log.Debug().Msg("message reply for me, fetching backlog")
 
@@ -168,9 +178,10 @@ func (a *App) handleFromReplyForward(ctx context.Context, msg Message) error {
 
 func (a *App) handleFromReply(ctx context.Context, msg Message) error {
 
-	if msg.TwinDst[0] == a.twin || msg.Proxy {
+	if msg.Proxy {
+		return a.handleFromReplyForProxy(ctx, msg)
+	} else if msg.TwinDst[0] == a.twin {
 		return a.handleFromReplyForMe(ctx, msg)
-
 	} else if msg.TwinSrc == a.twin {
 		return a.handleFromReplyForward(ctx, msg)
 	}
