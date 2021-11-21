@@ -2,10 +2,18 @@
 
 ## Server
 
+### Get the latest release
+- you can fine the latest release [here](https://github.com/threefoldtech/go-rmb/releases/latest)
+### How to build
+- To build a binary, run the following command:
+```bash
+make build
+```
+### Run the server
 To run `msgbusd` (msgbus daemon) which is the server (aka agent) running to process messages, you can use
 the following:
 
-```
+```bash
 msgbusd --twin <twin-id>
 ```
 
@@ -23,7 +31,7 @@ More options are available:
 
 ## Run systemd service
 
-- download the latest binary and move it to a directory in the machine's PATH (e.g. /usr/local/bin)
+- Download the latest binary from [here](https://github.com/threefoldtech/go-rmb/releases/latest) and move it to a directory in the machine's PATH (e.g. /usr/local/bin)
 - This command create a unit file for systemd service named `msgbusd.service`
 
   ```bash
