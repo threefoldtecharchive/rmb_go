@@ -23,8 +23,8 @@ More options are available:
 
 ## Run systemd service
 
-- download the latest binary and move it to bin dir
-- This command create a unit file for systemd service named `msgbus.service`
+- download the latest binary and move it to a directory in the machine's PATH (e.g. /usr/local/bin)
+- This command create a unit file for systemd service named `msgbusd.service`
 
   ```bash
   # create msgbusd service
@@ -35,18 +35,20 @@ More options are available:
   After=redis-server.service
 
   [Service]
-  ExecStart=msgbusd --twin $TWIN [options]
+  ExecStart=msgbusd --twin <twin-id> [options]
   Type=simple
   Restart=always
-  User= $USER
-  Group= $USER
+  User=<user>
+  Group=<group>
 
   [Install]
   WantedBy=multi-user.target
   Alias=msgbusd.service
   EOF
   ```
-- you need to update the file `/etc/systemd/system/msgbusd.service` and set valid options in the `ExecStart`
+- you need to update the file `/etc/systemd/system/msgbusd.service` with:
+  - Set your twin-id and valid options in the `ExecStart` msgbusd command.
+  - Set the user and group promoted to run the service
 - enable the service
   ```
    systemctl enable msgbusd.service
