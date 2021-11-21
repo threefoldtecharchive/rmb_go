@@ -32,6 +32,7 @@ More options are available:
   [Unit]
   Description=message bus server
   After=network.target
+  After=redis-server.service
 
   [Service]
   ExecStart=msgbus --twin TWIN-id [options]
@@ -78,6 +79,16 @@ More options are available:
   نوف 18 11:08:41 ayoub-Inspiron-3576 msgbus[81090]: 2021/11/18 11:08:41 Connecting to wss://tfchain.dev.grid.tf/ws...
   نوف 18 11:08:42 ayoub-Inspiron-3576 msgbus[81090]: 2021-11-18T11:08:42+02:00 info initializing agent server twin=24
   ```
+
+## To upgrade the machine
+- just replace the binary with the new one and apply
+```
+systemctl restart msgbus.service
+```
+- it you have changes in the `/etc/systemd/system/msgbus.service` you have to run this command first
+```
+systemctl daemon-reload
+```
 
 ## Specification
 
