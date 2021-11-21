@@ -18,7 +18,7 @@ More options are available:
 
 - The `twin-id` is mendatory and will be used to identify messagebus identifier
 - The redis address can be used to specify a running redis server, it can be an address
-  (eg: `127.0.0.1:6379`, this is the default value) or a unix socket (eg: `/var/run/redis.sock`)
+  (e.g. `127.0.0.1:6379`, this is the default value) or a unix socket (e.g. `/var/run/redis.sock`)
 - The substrate argument should be a valid http webservice made to query substrate db
 
 ## Run systemd service
@@ -27,15 +27,15 @@ More options are available:
 - This command create a unit file for systemd service named `msgbus.service`
 
   ```bash
-  # create msgbus service
-  cat << EOF > /etc/systemd/system/msgbus.service
+  # create msgbusd service
+  cat << EOF > /etc/systemd/system/msgbusd.service
   [Unit]
   Description=message bus server
   After=network.target
   After=redis-server.service
 
   [Service]
-  ExecStart=msgbus --twin TWIN-id [options]
+  ExecStart=msgbusd --twin $TWIN [options]
   Type=simple
   Restart=always
   User= $USER
@@ -43,49 +43,54 @@ More options are available:
 
   [Install]
   WantedBy=multi-user.target
-  Alias=msgbus.service
+  Alias=msgbusd.service
   EOF
   ```
-
+- you need to update the file `/etc/systemd/system/msgbusd.service` and set valid options in the `ExecStart`
 - enable the service
   ```
-   systemctl enable msgbus.service
+   systemctl enable msgbusd.service
   ```
 - start the service
+
   ```
-  systemctl start msgbus.service
+  systemctl start msgbusd.service
   ```
 
 - check the status
 
   ```
-  systemctl status msgbus.service
+  systemctl status msgbusd.service
   ```
 
   you have to see some think like this
 
   ```bash
-  ➜ systemctl status msgbus.service
-  ● msgbus.service - message bus server
-      Loaded: loaded (/etc/systemd/system/msgbus.service; disabled; vendor preset: enabled)
+  ➜ systemctl status msgbusd.service
+  ● msgbusd.service - message bus server
+      Loaded: loaded (/etc/systemd/system/msgbusd.service; disabled; vendor preset: enabled)
       Active: active (running) since Thu 2021-11-18 11:08:41 EET; 1min 48s ago
-    Main PID: 81090 (msgbus)
+    Main PID: 81090 (msgbusd)
         Tasks: 9 (limit: 18834)
       Memory: 6.5M
-      CGroup: /system.slice/msgbus.service
-              └─81090 /usr/local/bin/msgbus --twin 24
+      CGroup: /system.slice/msgbusd.service
+              └─81090 /usr/local/bin/msgbusd --twin 24
 
   نوف 18 11:08:41 ayoub-Inspiron-3576 systemd[1]: Started message bus server.
-  نوف 18 11:08:41 ayoub-Inspiron-3576 msgbus[81090]: 2021/11/18 11:08:41 Connecting to wss://tfchain.dev.grid.tf/ws...
-  نوف 18 11:08:42 ayoub-Inspiron-3576 msgbus[81090]: 2021-11-18T11:08:42+02:00 info initializing agent server twin=24
+  نوف 18 11:08:41 ayoub-Inspiron-3576 msgbusd[81090]: 2021/11/18 11:08:41 Connecting to wss://tfchain.dev.grid.tf/ws...
+  نوف 18 11:08:42 ayoub-Inspiron-3576 msgbusd[81090]: 2021-11-18T11:08:42+02:00 info initializing agent server twin=24
   ```
 
 ## To upgrade the machine
+
 - just replace the binary with the new one and apply
+
 ```
-systemctl restart msgbus.service
+systemctl restart msgbusd.service
 ```
-- it you have changes in the `/etc/systemd/system/msgbus.service` you have to run this command first
+
+- it you have changes in the `/etc/systemd/system/msgbusd.service` you have to run this command first
+
 ```
 systemctl daemon-reload
 ```
