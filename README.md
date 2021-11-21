@@ -2,13 +2,23 @@
 
 ## Server
 
+### Get the latest release
+- you can fine the latest release [here](https://github.com/threefoldtech/go-rmb/releases/latest)
+### How to build
+- To build a binary, run the following command:
+```bash
+make build
+```
+### Run the server
 To run `msgbusd` (msgbus daemon) which is the server (aka agent) running to process messages, you can use
 the following:
-```
+
+```bash
 msgbusd --twin <twin-id>
 ```
 
 More options are available:
+
 ```
   --redis [redis-endpoint]
   --substrate [substrate-http]
@@ -16,12 +26,89 @@ More options are available:
 
 - The `twin-id` is mendatory and will be used to identify messagebus identifier
 - The redis address can be used to specify a running redis server, it can be an address
-(eg: `127.0.0.1:6379`, this is the default value) or a unix socket (eg: `/var/run/redis.sock`)
+  (e.g. `127.0.0.1:6379`, this is the default value) or a unix socket (e.g. `/var/run/redis.sock`)
 - The substrate argument should be a valid http webservice made to query substrate db
+
+## Run systemd service
+
+- Download the latest binary from [here](https://github.com/threefoldtech/go-rmb/releases/latest) and move it to a directory in the machine's PATH (e.g. /usr/local/bin)
+- This command create a unit file for systemd service named `msgbusd.service`
+
+  ```bash
+  # create msgbusd service
+  cat << EOF > /etc/systemd/system/msgbusd.service
+  [Unit]
+  Description=message bus server
+  After=network.target
+  After=redis-server.service
+
+  [Service]
+  ExecStart=msgbusd --twin <twin-id> [options]
+  Type=simple
+  Restart=always
+  User=<user>
+  Group=<group>
+
+  [Install]
+  WantedBy=multi-user.target
+  Alias=msgbusd.service
+  EOF
+  ```
+- you need to update the file `/etc/systemd/system/msgbusd.service` with:
+  - Set your twin-id and valid options in the `ExecStart` msgbusd command.
+  - Set the user and group promoted to run the service
+- enable the service
+  ```
+   systemctl enable msgbusd.service
+  ```
+- start the service
+
+  ```
+  systemctl start msgbusd.service
+  ```
+
+- check the status
+
+  ```
+  systemctl status msgbusd.service
+  ```
+
+  you have to see some think like this
+
+  ```bash
+  ➜ systemctl status msgbusd.service
+  ● msgbusd.service - message bus server
+      Loaded: loaded (/etc/systemd/system/msgbusd.service; disabled; vendor preset: enabled)
+      Active: active (running) since Thu 2021-11-18 11:08:41 EET; 1min 48s ago
+    Main PID: 81090 (msgbusd)
+        Tasks: 9 (limit: 18834)
+      Memory: 6.5M
+      CGroup: /system.slice/msgbusd.service
+              └─81090 /usr/local/bin/msgbusd --twin 24
+
+  نوف 18 11:08:41 ayoub-Inspiron-3576 systemd[1]: Started message bus server.
+  نوف 18 11:08:41 ayoub-Inspiron-3576 msgbusd[81090]: 2021/11/18 11:08:41 Connecting to wss://tfchain.dev.grid.tf/ws...
+  نوف 18 11:08:42 ayoub-Inspiron-3576 msgbusd[81090]: 2021-11-18T11:08:42+02:00 info initializing agent server twin=24
+  ```
+
+## To upgrade the machine
+
+- just replace the binary with the new one and apply
+
+```
+systemctl restart msgbusd.service
+```
+
+- it you have changes in the `/etc/systemd/system/msgbusd.service` you have to run this command first
+
+```
+systemctl daemon-reload
+```
 
 ## Specification
 
 Object Schema:
+
 ```js
 {
   "ver": 1,                                # version identifier (always 1 for now)
@@ -154,6 +241,22 @@ Source application now get the reply message on it's expected queue.
   "err": ""
 }
 ```
+
+## The RMB allow also interaction using HTTP requests
+
+- there is two endpoints available:
+
+  1. `/zbus-cmd`: For submitting message and adding it to the remote queue for processing.
+     - this endpoint will process the cmd and keep the result in a redis queue with unique id
+     - response: The response from this endpoint will be a `MessageIdentifier` object contain the unique id generated for every message to get the message result from it vie the another endpoint `/zbus-result`.
+       ```go
+       type MessageIdentifier struct {
+         Retqueue string `json:"retqueue"`
+       }
+       ```
+  2. `/zbus-result`: For get the message result from its redis queue
+     - get a `MessageIdentifier` object
+     - response: The response from this endpoint will be a list of messages from the redis queue.
 
 ### Schema
 
