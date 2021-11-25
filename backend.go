@@ -150,7 +150,6 @@ func (r *RedisBackend) GetMessageReply(ctx context.Context, msg MessageIdentifie
 
 }
 
-
 func (r *RedisBackend) PushToBacklog(ctx context.Context, msg Message, id string) error {
 	bytes, err := json.Marshal(msg)
 	if err != nil {
@@ -198,7 +197,12 @@ func (r *RedisBackend) PushProcessedMessage(ctx context.Context, msg Message) er
 	}
 
 	_, err = r.client.LPush(ctx, msg.Retqueue, bytes).Result()
-	return err
+	if err != nil {
+		return errors.Wrap(err, "can't push message to redis")
+	}
+	// make keys expire after 30 mins
+	r.client.Expire(ctx, msg.Retqueue, time.Minute*30)
+	return nil
 }
 
 func (r *RedisBackend) QueueRetry(ctx context.Context, msg Message) error {
