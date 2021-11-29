@@ -14,6 +14,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// MAX_WORKERS is number of active channels that communicate with the backend
+const MAX_WORKERS = 10
+
 func (a *Message) Valid() error {
 	if a.Version != 1 {
 		return errors.New("protocol version mismatch")
@@ -226,8 +229,33 @@ func (a *App) handleScrubbing(ctx context.Context) error {
 	return nil
 }
 
+func (a *App) worker(ctx context.Context, in <-chan Envelope) {
+	for envelope := range in {
+		switch envelope.Tag {
+		case Reply:
+			if err := a.handleFromReply(ctx, envelope.Message); err != nil {
+				log.Err(err).Msg("handle_from_reply")
+			}
+		case Remote:
+			if err := a.handleFromRemote(ctx, envelope.Message); err != nil {
+				log.Err(err).Msg("handle_from_remote")
+			}
+		case Local:
+			if err := a.handleFromLocal(ctx, envelope.Message); err != nil {
+				log.Err(err).Msg("handle_from_local")
+			}
+		}
+	}
+}
+
 func (a *App) runServer(ctx context.Context) {
 	log.Info().Int("twin", a.twin).Msg("initializing agent server")
+
+	// start the workers
+	ch := make(chan Envelope)
+	for i := 0; i < MAX_WORKERS; i++ {
+		go a.worker(ctx, ch)
+	}
 
 	for {
 		select {
@@ -265,22 +293,7 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-		go func() {
-			switch envelope.Tag {
-			case Reply:
-				if err := a.handleFromReply(ctx, envelope.Message); err != nil {
-					log.Err(err).Msg("handle_from_reply")
-				}
-			case Remote:
-				if err := a.handleFromRemote(ctx, envelope.Message); err != nil {
-					log.Err(err).Msg("handle_from_remote")
-				}
-			case Local:
-				if err := a.handleFromLocal(ctx, envelope.Message); err != nil {
-					log.Err(err).Msg("handle_from_local")
-				}
-			}
-		}()
+		ch <- envelope
 	}
 }
 
