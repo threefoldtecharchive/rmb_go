@@ -265,20 +265,22 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-		switch envelope.Tag {
-		case Reply:
-			if err := a.handleFromReply(ctx, envelope.Message); err != nil {
-				log.Err(err).Msg("handle_from_reply")
+		go func() {
+			switch envelope.Tag {
+			case Reply:
+				if err := a.handleFromReply(ctx, envelope.Message); err != nil {
+					log.Err(err).Msg("handle_from_reply")
+				}
+			case Remote:
+				if err := a.handleFromRemote(ctx, envelope.Message); err != nil {
+					log.Err(err).Msg("handle_from_remote")
+				}
+			case Local:
+				if err := a.handleFromLocal(ctx, envelope.Message); err != nil {
+					log.Err(err).Msg("handle_from_local")
+				}
 			}
-		case Remote:
-			if err := a.handleFromRemote(ctx, envelope.Message); err != nil {
-				log.Err(err).Msg("handle_from_remote")
-			}
-		case Local:
-			if err := a.handleFromLocal(ctx, envelope.Message); err != nil {
-				log.Err(err).Msg("handle_from_local")
-			}
-		}
+		}()
 	}
 }
 
