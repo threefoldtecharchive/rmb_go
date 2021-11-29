@@ -15,7 +15,7 @@ import (
 )
 
 // MAX_WORKERS is number of active channels that communicate with the backend
-const MAX_WORKERS = 10
+const MAX_WORKERS = 1000
 
 func (a *Message) Valid() error {
 	if a.Version != 1 {
