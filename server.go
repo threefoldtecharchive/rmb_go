@@ -14,9 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// MAX_WORKERS is number of active channels that communicate with the backend
-const MAX_WORKERS = 1000
-
 func (a *Message) Valid() error {
 	if a.Version != 1 {
 		return errors.New("protocol version mismatch")
@@ -253,7 +250,7 @@ func (a *App) runServer(ctx context.Context) {
 
 	// start the workers
 	ch := make(chan Envelope)
-	for i := 0; i < MAX_WORKERS; i++ {
+	for i := 0; i < a.workers; i++ {
 		go a.worker(ctx, ch)
 	}
 
@@ -391,7 +388,7 @@ func (a *App) Serve(root context.Context) error {
 	return nil
 }
 
-func NewServer(substrate string, redisServer string, twin int) (*App, error) {
+func NewServer(substrate string, redisServer string, twin int, workers int) (*App, error) {
 	router := mux.NewRouter()
 	backend := NewRedisBackend(redisServer)
 	resolver, err := NewSubstrateResolver(substrate)
@@ -406,6 +403,7 @@ func NewServer(substrate string, redisServer string, twin int) (*App, error) {
 			Handler: router,
 			Addr:    "0.0.0.0:8051",
 		},
+		workers: workers,
 	}
 	router.HandleFunc("/zbus-reply", a.reply)
 	router.HandleFunc("/zbus-remote", a.remote)
