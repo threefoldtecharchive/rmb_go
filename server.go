@@ -227,7 +227,13 @@ func (a *App) handleScrubbing(ctx context.Context) error {
 }
 
 func (a *App) worker(ctx context.Context, in <-chan Envelope) {
-	for envelope := range in {
+	for {
+		var envelope Envelope
+		select {
+		case envelope = <-in:
+		case <-ctx.Done():
+			return
+		}
 		switch envelope.Tag {
 		case Reply:
 			if err := a.handleFromReply(ctx, envelope.Message); err != nil {
