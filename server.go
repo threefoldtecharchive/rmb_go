@@ -296,7 +296,11 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-		ch <- envelope
+select{
+    case <-ctx.Done():
+         return
+    case ch <- envelope:
+}    
 	}
 }
 
