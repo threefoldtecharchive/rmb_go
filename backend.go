@@ -70,8 +70,8 @@ func NewRedisBackend(redisServer string) *RedisBackend {
 	}
 }
 func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelope, error) {
-	res, err := r.client.BLPop(ctx, timeout, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
 
+	res, err := r.client.BLPop(ctx, timeout, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
 	if err == redis.Nil {
 		return Envelope{}, ErrNotAvailable
 	} else if err != nil {
