@@ -115,11 +115,9 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 
 func (a *App) handleFromLocal(ctx context.Context, msg Message) error {
 	for _, dst := range msg.TwinDst {
-		go func(dst int) {
-			if err := a.handleFromLocalItem(ctx, msg, dst); err != nil {
-				log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
-			}
-		}(dst)
+		if err := a.handleFromLocalItem(ctx, msg, dst); err != nil {
+			log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
+		}
 	}
 	return nil
 }
@@ -229,7 +227,6 @@ func (a *App) handleScrubbing(ctx context.Context) error {
 }
 
 func (a *App) worker(ctx context.Context, in <-chan Envelope) {
-
 	for {
 		var envelope Envelope
 		select {
@@ -237,7 +234,6 @@ func (a *App) worker(ctx context.Context, in <-chan Envelope) {
 		case <-ctx.Done():
 			return
 		}
-
 		switch envelope.Tag {
 		case Reply:
 			if err := a.handleFromReply(ctx, envelope.Message); err != nil {
@@ -252,7 +248,6 @@ func (a *App) worker(ctx context.Context, in <-chan Envelope) {
 				log.Err(err).Msg("handle_from_local")
 			}
 		}
-
 	}
 }
 
@@ -264,8 +259,8 @@ func (a *App) runServer(ctx context.Context) {
 	for i := 0; i < a.workers; i++ {
 		go a.worker(ctx, ch)
 	}
-	for {
 
+	for {
 		select {
 		case <-ctx.Done():
 			return
@@ -273,6 +268,7 @@ func (a *App) runServer(ctx context.Context) {
 		}
 
 		envelope, err := a.backend.Next(ctx, time.Second)
+
 		if errors.Is(err, ErrNotAvailable) {
 			// no next message to process
 			if err := a.handleRetry(ctx); err != nil {
@@ -300,11 +296,11 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-		select {
-		case <-ctx.Done():
-			return
-		case ch <- envelope:
-		}
+select{
+    case <-ctx.Done():
+         return
+    case ch <- envelope:
+}    
 	}
 }
 
