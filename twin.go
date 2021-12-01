@@ -2,6 +2,7 @@ package rmb
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -106,12 +107,19 @@ func (c *twinClient) readError(r io.Reader) string {
 }
 
 func (c *twinClient) SendRemote(msg Message) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*10))
+	defer cancel()
+
 	var buffer bytes.Buffer
 	if err := json.NewEncoder(&buffer).Encode(msg); err != nil {
 		return err
 	}
-	resp, err := http.Post(remoteURL(c.dstIP), "application/json", &buffer)
-	// check on response for non-communication errors?
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, remoteURL(c.dstIP), &buffer)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

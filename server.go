@@ -226,8 +226,39 @@ func (a *App) handleScrubbing(ctx context.Context) error {
 	return nil
 }
 
+func (a *App) worker(ctx context.Context, in <-chan Envelope) {
+	for {
+		var envelope Envelope
+		select {
+		case envelope = <-in:
+		case <-ctx.Done():
+			return
+		}
+		switch envelope.Tag {
+		case Reply:
+			if err := a.handleFromReply(ctx, envelope.Message); err != nil {
+				log.Err(err).Msg("handle_from_reply")
+			}
+		case Remote:
+			if err := a.handleFromRemote(ctx, envelope.Message); err != nil {
+				log.Err(err).Msg("handle_from_remote")
+			}
+		case Local:
+			if err := a.handleFromLocal(ctx, envelope.Message); err != nil {
+				log.Err(err).Msg("handle_from_local")
+			}
+		}
+	}
+}
+
 func (a *App) runServer(ctx context.Context) {
 	log.Info().Int("twin", a.twin).Msg("initializing agent server")
+
+	// start the workers
+	ch := make(chan Envelope)
+	for i := 0; i < a.workers; i++ {
+		go a.worker(ctx, ch)
+	}
 
 	for {
 		select {
@@ -265,20 +296,11 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-		switch envelope.Tag {
-		case Reply:
-			if err := a.handleFromReply(ctx, envelope.Message); err != nil {
-				log.Err(err).Msg("handle_from_reply")
-			}
-		case Remote:
-			if err := a.handleFromRemote(ctx, envelope.Message); err != nil {
-				log.Err(err).Msg("handle_from_remote")
-			}
-		case Local:
-			if err := a.handleFromLocal(ctx, envelope.Message); err != nil {
-				log.Err(err).Msg("handle_from_local")
-			}
-		}
+select{
+    case <-ctx.Done():
+         return
+    case ch <- envelope:
+}    
 	}
 }
 
@@ -376,7 +398,7 @@ func (a *App) Serve(root context.Context) error {
 	return nil
 }
 
-func NewServer(substrate string, redisServer string, twin int) (*App, error) {
+func NewServer(substrate string, redisServer string, twin int, workers int) (*App, error) {
 	router := mux.NewRouter()
 	backend := NewRedisBackend(redisServer)
 	resolver, err := NewSubstrateResolver(substrate)
@@ -391,6 +413,7 @@ func NewServer(substrate string, redisServer string, twin int) (*App, error) {
 			Handler: router,
 			Addr:    "0.0.0.0:8051",
 		},
+		workers: workers,
 	}
 	router.HandleFunc("/zbus-reply", a.reply)
 	router.HandleFunc("/zbus-remote", a.remote)

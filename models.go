@@ -27,4 +27,5 @@ type App struct {
 	twin     int
 	resolver TwinResolver
 	server   *http.Server
+	workers  int
 }
