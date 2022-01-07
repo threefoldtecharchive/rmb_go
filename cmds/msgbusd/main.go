@@ -34,7 +34,7 @@ func (f *flags) Valid() error {
 func main() {
 	var f flags
 	flag.IntVar(&f.twin, "twin", -1, "the twin id")
-	flag.StringVar(&f.substrate, "substrate", "wss://tfchain.dev.grid.tf/ws", "substrate url")
+	flag.StringVar(&f.substrate, "substrate", "wss://tfchain.grid.tf", "substrate url")
 	flag.StringVar(&f.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
 	flag.StringVar(&f.redis, "redis", "127.0.0.1:6379", "redis url")
 	flag.IntVar(&f.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
