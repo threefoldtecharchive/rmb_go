@@ -48,7 +48,7 @@ func (bus *MessageBusClient) Send(msg rmb.Message, payload string) error {
 }
 
 func (bus *MessageBusClient) Read(msg rmb.Message) []rmb.Message {
-	log.Info().Str("return_queue", msg.Retqueue).Msg("Waiting reply")
+	log.Debug().Str("return_queue", msg.Retqueue).Msg("Waiting reply")
 	responses := []rmb.Message{}
 	println(msg.Retqueue)
 	for len(responses) < len(msg.TwinDst) {

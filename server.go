@@ -123,7 +123,7 @@ func (a *App) handleFromLocal(ctx context.Context, msg Message) error {
 }
 
 func (a *App) handleFromRemote(ctx context.Context, msg Message) error {
-	log.Info().Str("queue", fmt.Sprintf("msgbus.%s", msg.Command)).Msg("forwarding to local service")
+	log.Debug().Str("queue", fmt.Sprintf("msgbus.%s", msg.Command)).Msg("forwarding to local service")
 
 	// forward to local service
 	return a.backend.QueueCommand(ctx, msg)
@@ -197,7 +197,7 @@ func (a *App) handleRetry(ctx context.Context) error {
 
 	// iterate over each entries
 	for _, entry := range entries {
-		log.Info().Str("key", entry.ID).Msg("retry needed")
+		log.Debug().Str("key", entry.ID).Msg("retry needed")
 
 		err := a.handleFromLocalItem(ctx, entry, entry.TwinDst[0])
 		if err != nil {
