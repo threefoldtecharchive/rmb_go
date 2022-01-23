@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"github.com/threefoldtech/substrate-client"
 )
 
 func (a *Message) Valid() error {
@@ -90,7 +91,11 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 	if err != nil {
 		return err
 	}
-
+	err = update.Sign(a.identity)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to sign")
+		return errors.Wrap(err, "couldn't sign message")
+	}
 	update.ID = fmt.Sprintf("%d.%d", dst, id)
 	// anything better?
 	update.Retqueue = "msgbus.system.reply"
@@ -296,21 +301,34 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-select{
-    case <-ctx.Done():
-         return
-    case ch <- envelope:
-}    
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- envelope:
+		}
 	}
 }
-
 func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
-
+	pk, err := a.resolver.PublicKey(msg.TwinSrc)
+	if errors.Is(err, substrate.ErrNotFound) {
+		log.Error().Err(err).Msg("source twin not found")
+		errorReply(w, http.StatusBadRequest, "source twin not found")
+		return
+	} else if err != nil {
+		log.Error().Err(err).Msg("failed to get twin public key")
+		errorReply(w, http.StatusBadGateway, "couldn't get twin public key")
+		return
+	}
+	if err := msg.Verify(pk); err != nil {
+		log.Error().Err(err).Int("src", msg.TwinSrc).Msg("failed to verify")
+		errorReply(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
 		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
 		return
@@ -343,6 +361,21 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 
 	msg.Proxy = true
 	msg.Retqueue = uuid.New().String()
+	pk, err := a.resolver.PublicKey(msg.TwinSrc)
+	if errors.Is(err, substrate.ErrNotFound) {
+		log.Error().Err(err).Msg("source twin not found")
+		errorReply(w, http.StatusBadRequest, "source twin not found")
+		return
+	} else if err != nil {
+		log.Error().Err(err).Msg("failed to get twin public key")
+		errorReply(w, http.StatusBadGateway, "couldn't get twin public key")
+		return
+	}
+	if err := msg.Verify(pk); err != nil {
+		log.Error().Err(err).Int("src", msg.TwinSrc).Msg("failed to verify")
+		errorReply(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
 		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
@@ -398,16 +431,26 @@ func (a *App) Serve(root context.Context) error {
 	return nil
 }
 
-func NewServer(substrate string, redisServer string, twin int, workers int) (*App, error) {
+func NewServer(substrateURL string, redisServer string, workers int, identity substrate.Identity) (*App, error) {
 	router := mux.NewRouter()
 	backend := NewRedisBackend(redisServer)
-	resolver, err := NewSubstrateResolver(substrate)
+	sub, err := substrate.NewSubstrate(substrateURL)
+	if err != nil {
+		return nil, errors.Wrap(err, "couldn't get substrate client")
+	}
+	twin, err := sub.GetTwinByPubKey(identity.PublicKey())
+	if err != nil {
+		return nil, errors.Wrap(err, "couldn't get twin associated with mnemonics")
+	}
+	resolver, err := NewSubstrateResolver(sub)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
 	}
+
 	a := &App{
 		backend:  backend,
-		twin:     twin,
+		identity: identity,
+		twin:     int(twin),
 		resolver: NewCacheResolver(resolver, 5*time.Minute),
 		server: &http.Server{
 			Handler: router,

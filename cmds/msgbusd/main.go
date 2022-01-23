@@ -17,26 +17,27 @@ import (
 )
 
 type flags struct {
-	twin      int
 	substrate string
 	debug     string
 	redis     string
+	mnemonics string
+	key_type  string
 	workers   int
 }
 
 func (f *flags) Valid() error {
-	if f.twin == -1 {
-		return fmt.Errorf("twin id is required")
+	if f.mnemonics == "" {
+		return fmt.Errorf("mnemonics id is required")
 	}
 	return nil
 }
 
 func main() {
 	var f flags
-	flag.IntVar(&f.twin, "twin", -1, "the twin id")
 	flag.StringVar(&f.substrate, "substrate", "wss://tfchain.grid.tf", "substrate url")
 	flag.StringVar(&f.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
-	flag.StringVar(&f.redis, "redis", "127.0.0.1:6379", "redis url")
+	flag.StringVar(&f.mnemonics, "mnemonics", "", "mnemonics")
+	flag.StringVar(&f.key_type, "key-type", "sr25519", "key type")
 	flag.IntVar(&f.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
 	flag.Parse()
 
@@ -53,7 +54,11 @@ func main() {
 }
 
 func app(f flags) error {
-	s, err := rmb.NewServer(f.substrate, f.redis, f.twin, f.workers)
+	identity, err := rmb.ConstructSigner(f.mnemonics, f.key_type)
+	if err != nil {
+		return err
+	}
+	s, err := rmb.NewServer(f.substrate, f.redis, f.workers, identity)
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
 	}
