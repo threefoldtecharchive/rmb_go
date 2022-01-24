@@ -41,7 +41,11 @@ type App struct {
 }
 
 func (m *Message) Sign(s substrate.Identity) error {
-	data := challenge(m)
+	data, err := challenge(m)
+	if err != nil {
+		return err
+	}
+
 	sig, err := s.Sign(data)
 	if err != nil {
 		return err
@@ -56,7 +60,10 @@ func (m *Message) Verify(publicKey []byte) error {
 		return errors.New("signature field is empty, visit the project github repo for instructions to update")
 	}
 
-	data := challenge(m)
+	data, err := challenge(m)
+	if err != nil {
+		return err
+	}
 	verifier, err := ConstructVerifier(publicKey, m.SignatureType)
 	if err != nil {
 		return err

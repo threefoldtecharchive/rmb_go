@@ -2,6 +2,7 @@ package rmb
 
 import (
 	"crypto/ed25519"
+	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 
@@ -62,8 +63,17 @@ func (k Sr25519VerifyingKey) Verify(msg []byte, sig []byte) bool {
 	return k.verify(*pk, msg, sig)
 }
 
-func challenge(m *Message) []byte {
-	return []byte(fmt.Sprintf("%s%s", m.Command, m.Data))
+func challenge(m *Message) ([]byte, error) {
+	hash := md5.New()
+	if _, err := fmt.Fprintf(hash, "%s", m.Command); err != nil {
+		return nil, err
+	}
+
+	if _, err := fmt.Fprintf(hash, "%d", m.Data); err != nil {
+		return nil, err
+	}
+
+	return hash.Sum(nil), nil
 }
 
 func ConstructSigner(mnemonics string, key_type string) (substrate.Identity, error) {
