@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/go-rmb"
+	"github.com/threefoldtech/substrate-client"
 )
 
 type flags struct {
@@ -53,8 +54,18 @@ func main() {
 	}
 }
 
+func constructSigner(mnemonics string, key_type string) (substrate.Identity, error) {
+	if key_type == "ed25519" {
+		return substrate.NewIdentityFromEd25519Phrase(mnemonics)
+	} else if key_type == "sr25519" {
+		return substrate.NewIdentityFromSr25519Phrase(mnemonics)
+	} else {
+		return nil, fmt.Errorf("unrecognized key type %s", key_type)
+	}
+}
+
 func app(f flags) error {
-	identity, err := rmb.ConstructSigner(f.mnemonics, f.key_type)
+	identity, err := constructSigner(f.mnemonics, f.key_type)
 	if err != nil {
 		return err
 	}

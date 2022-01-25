@@ -2,12 +2,10 @@ package rmb
 
 import (
 	"crypto/ed25519"
-	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 
 	sr25519 "github.com/ChainSafe/go-schnorrkel"
-	"github.com/threefoldtech/substrate-client"
 
 	"github.com/gtank/merlin"
 	"github.com/rs/zerolog/log"
@@ -63,34 +61,32 @@ func (k Sr25519VerifyingKey) Verify(msg []byte, sig []byte) bool {
 	return k.verify(*pk, msg, sig)
 }
 
-func challenge(m *Message) ([]byte, error) {
-	hash := md5.New()
-	if _, err := fmt.Fprintf(hash, "%s", m.Command); err != nil {
-		return nil, err
-	}
-
-	if _, err := fmt.Fprintf(hash, "%d", m.Data); err != nil {
-		return nil, err
-	}
-
-	return hash.Sum(nil), nil
-}
-
-func ConstructSigner(mnemonics string, key_type string) (substrate.Identity, error) {
-	if key_type == "ed25519" {
-		return substrate.NewIdentityFromEd25519Phrase(mnemonics)
-	} else if key_type == "sr25519" {
-		return substrate.NewIdentityFromSr25519Phrase(mnemonics)
-	} else {
-		return nil, fmt.Errorf("unrecognized key type %s", key_type)
-	}
-}
-func ConstructVerifier(publicKey []byte, key_type string) (Verifier, error) {
+func constructVerifier(publicKey []byte, key_type string) (Verifier, error) {
 	if key_type == SignatureTypeEd25519 {
 		return Ed25519VerifyingKey(publicKey), nil
 	} else if key_type == SignatureTypeSr25519 {
 		return Sr25519VerifyingKey(publicKey), nil
 	} else {
 		return nil, fmt.Errorf("unrecognized key type %s", key_type)
+	}
+}
+
+func sigTypeToChar(sigType string) (byte, error) {
+	if sigType == SignatureTypeEd25519 {
+		return byte('e'), nil
+	} else if sigType == SignatureTypeSr25519 {
+		return byte('s'), nil
+	} else {
+		return 0, fmt.Errorf("unrecognized signature type %s", sigType)
+	}
+}
+
+func charToSigType(prefix byte) (string, error) {
+	if prefix == byte('e') {
+		return SignatureTypeEd25519, nil
+	} else if prefix == byte('s') {
+		return SignatureTypeSr25519, nil
+	} else {
+		return "", fmt.Errorf("unrecognized signature prefix %x", []byte{prefix})
 	}
 }

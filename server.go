@@ -40,9 +40,16 @@ func IsValidUUID(uuid string) bool {
 	return r.MatchString(uuid)
 }
 
-func errorReply(w http.ResponseWriter, status int, message string) {
+func errorReply(w http.ResponseWriter, status int, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	w.WriteHeader(status)
-	fmt.Fprintf(w, "{\"status\": \"error\", \"message\": \"%s\"}", message)
+	if err := json.NewEncoder(w).Encode(ErrorReply{
+		"error",
+		msg,
+	}); err != nil {
+		log.Error().Err(err).Str("msg", msg).Int("status", status).Msg("failed to encode json")
+		fmt.Fprint(w, "{\"status\": \"error\", \"message\": \"non encodable error happened\"}")
+	}
 }
 
 func successReply(w http.ResponseWriter) {
@@ -70,9 +77,7 @@ func (a *App) msgNeedsRetry(ctx context.Context, msg Message, err error) error {
 }
 
 func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) error {
-	if msg.Epoch == 0 {
-		msg.Epoch = time.Now().Unix()
-	}
+	msg.Epoch = time.Now().Unix()
 	update := msg
 	update.TwinSrc = a.twin
 	update.TwinDst = []int{dst}
@@ -91,11 +96,6 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 	if err != nil {
 		return err
 	}
-	err = update.Sign(a.identity)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to sign")
-		return errors.Wrap(err, "couldn't sign message")
-	}
 	update.ID = fmt.Sprintf("%d.%d", dst, id)
 	// anything better?
 	update.Retqueue = "msgbus.system.reply"
@@ -104,6 +104,10 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 
 	if err != nil {
 		return errors.Wrap(err, "couldn't get twin ip")
+	}
+	err = update.Sign(a.identity)
+	if err != nil {
+		return errors.Wrap(err, "couldn't sign message")
 	}
 	err = c.SendRemote(update)
 
@@ -314,21 +318,20 @@ func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
+
 	pk, err := a.resolver.PublicKey(msg.TwinSrc)
 	if errors.Is(err, substrate.ErrNotFound) {
-		log.Error().Err(err).Msg("source twin not found")
-		errorReply(w, http.StatusBadRequest, "source twin not found")
+		errorReply(w, http.StatusBadRequest, "source twin %d not found", msg.TwinSrc)
 		return
 	} else if err != nil {
-		log.Error().Err(err).Msg("failed to get twin public key")
-		errorReply(w, http.StatusBadGateway, "couldn't get twin public key")
+		errorReply(w, http.StatusBadGateway, "couldn't get twin %d public key: %s", msg.TwinSrc, err.Error())
 		return
 	}
 	if err := msg.Verify(pk); err != nil {
-		log.Error().Err(err).Int("src", msg.TwinSrc).Msg("failed to verify")
 		errorReply(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
 	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
 		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
 		return
@@ -359,24 +362,21 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg.Proxy = true
-	msg.Retqueue = uuid.New().String()
 	pk, err := a.resolver.PublicKey(msg.TwinSrc)
 	if errors.Is(err, substrate.ErrNotFound) {
-		log.Error().Err(err).Msg("source twin not found")
-		errorReply(w, http.StatusBadRequest, "source twin not found")
+		errorReply(w, http.StatusBadRequest, "source twin %d not found", msg.TwinSrc)
 		return
 	} else if err != nil {
-		log.Error().Err(err).Msg("failed to get twin public key")
-		errorReply(w, http.StatusBadGateway, "couldn't get twin public key")
+		errorReply(w, http.StatusBadGateway, "couldn't get twin %d public key: %s", msg.TwinSrc, err.Error())
 		return
 	}
 	if err := msg.Verify(pk); err != nil {
-		log.Error().Err(err).Int("src", msg.TwinSrc).Msg("failed to verify")
 		errorReply(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
+	msg.Proxy = true
+	msg.Retqueue = uuid.New().String()
 	if err := a.backend.QueueRemote(r.Context(), msg); err != nil {
 		errorReply(w, http.StatusInternalServerError, "couldn't queue message for processing")
 		return
