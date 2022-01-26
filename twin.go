@@ -16,6 +16,7 @@ import (
 
 type TwinResolver interface {
 	Resolve(twin int) (TwinClient, error)
+	PublicKey(twin int) ([]byte, error)
 }
 
 type TwinClient interface {
@@ -68,11 +69,24 @@ func (c *cacheResolver) Resolve(twin int) (TwinClient, error) {
 	return client, nil
 }
 
-func NewSubstrateResolver(substrateURL string) (TwinResolver, error) {
-	client, err := substrate.NewSubstrate(substrateURL)
+func (c *cacheResolver) PublicKey(twin int) ([]byte, error) {
+	key := fmt.Sprintf("pk:%d", twin)
+	cached, ok := c.cache.Get(key)
+	if ok {
+		log.Debug().Int("twin", twin).Msg("public key cache hit")
+		return cached.([]byte), nil
+	}
+
+	pk, err := c.TwinResolver.PublicKey(twin)
 	if err != nil {
 		return nil, err
 	}
+
+	c.cache.Set(key, pk, cache.DefaultExpiration)
+	return pk, nil
+}
+
+func NewSubstrateResolver(client *substrate.Substrate) (TwinResolver, error) {
 
 	return &substrateResolver{
 		client: client,
@@ -91,6 +105,17 @@ func (r substrateResolver) Resolve(timeID int) (TwinClient, error) {
 	return &twinClient{
 		dstIP: twin.IP,
 	}, nil
+}
+
+func (r substrateResolver) PublicKey(twinID int) ([]byte, error) {
+	log.Debug().Int("twin", twinID).Msg("resolving twin")
+
+	twin, err := r.client.GetTwin(uint32(twinID))
+	if err != nil {
+		return nil, err
+	}
+
+	return twin.Account.PublicKey(), nil
 }
 
 func (c *twinClient) readError(r io.Reader) string {
