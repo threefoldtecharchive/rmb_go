@@ -175,6 +175,11 @@ func (a *App) handleFromReplyForward(ctx context.Context, msg Message) error {
 		return errors.Wrap(err, "couldn't resolve twin ip")
 	}
 
+	err = msg.Sign(a.identity)
+	if err != nil {
+		return errors.Wrap(err, "couldn't sign reply message")
+	}
+
 	// forward to reply agent
 	err = r.SendReply(msg)
 
@@ -344,6 +349,19 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
+		return
+	}
+
+	pk, err := a.resolver.PublicKey(msg.TwinSrc)
+	if errors.Is(err, substrate.ErrNotFound) {
+		errorReply(w, http.StatusBadRequest, "source twin %d not found", msg.TwinSrc)
+		return
+	} else if err != nil {
+		errorReply(w, http.StatusBadGateway, "couldn't get twin %d public key: %s", msg.TwinSrc, err.Error())
+		return
+	}
+	if err := msg.Verify(pk); err != nil {
+		errorReply(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
