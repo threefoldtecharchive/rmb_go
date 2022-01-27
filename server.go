@@ -426,6 +426,13 @@ func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	for idx := range response {
+		if err := response[idx].Sign(a.identity); err != nil {
+			log.Error().Err(err).Msg("failed to sign reply")
+			errorReply(w, http.StatusInternalServerError, "signing failed")
+			return
+		}
+	}
 	json.NewEncoder(w).Encode(&response)
 }
 
