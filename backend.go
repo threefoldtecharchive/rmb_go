@@ -38,6 +38,7 @@ type Backend interface {
 	Next(ctx context.Context, timeout time.Duration) (Envelope, error)
 	QueueReply(ctx context.Context, msg Message) error // method name
 	QueueRemote(ctx context.Context, msg Message) error
+	QueueLocal(ctx context.Context, msg Message) error
 
 	IncrementID(ctx context.Context, id int) (int64, error)
 
@@ -94,6 +95,18 @@ func (r *RedisBackend) QueueReply(ctx context.Context, msg Message) error {
 	}
 
 	_, err = r.client.LPush(ctx, "msgbus.system.reply", bytes).Result()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (r *RedisBackend) QueueLocal(ctx context.Context, msg Message) error {
+	bytes, err := json.Marshal(msg)
+	if err != nil {
+		return errors.Wrap(err, "failed to encode into json")
+	}
+
+	_, err = r.client.LPush(ctx, "msgbus.system.local", bytes).Result()
 	if err != nil {
 		return err
 	}

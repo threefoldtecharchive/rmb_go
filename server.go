@@ -64,6 +64,7 @@ func (a *App) respondWithError(ctx context.Context, msg Message, err error) erro
 
 func (a *App) msgNeedsRetry(ctx context.Context, msg Message, err error) error {
 	if msg.Retry <= 0 {
+		msg.TwinSrc, msg.TwinDst[0] = msg.TwinDst[0], msg.TwinSrc
 		if err := a.respondWithError(ctx, msg, errors.Wrap(err, "all retries done")); err != nil {
 			return errors.Wrap(err, "failed to respond to the caller with the proper err")
 		}
@@ -76,15 +77,13 @@ func (a *App) msgNeedsRetry(ctx context.Context, msg Message, err error) error {
 	return nil
 }
 
-func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) error {
-	msg.Epoch = time.Now().Unix()
-	update := msg
-	update.TwinSrc = a.twin
-	update.TwinDst = []int{dst}
-
+func (a *App) handleFromLocalItem(ctx context.Context, msg Message) error {
+	msg.TwinSrc = a.twin
+	dst := msg.TwinDst[0]
 	var err error = nil
 	defer func() {
 		if err != nil {
+			msg.Epoch = time.Now().Unix()
 			if repErr := a.msgNeedsRetry(ctx, msg, err); repErr != nil {
 				log.Error().Err(repErr).Msg("failed while processing message retry")
 				log.Error().Err(err).Str("id", msg.ID).Msg("original error")
@@ -96,26 +95,24 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 	if err != nil {
 		return err
 	}
-	update.ID = fmt.Sprintf("%d.%d", dst, id)
-	// anything better?
-	update.Retqueue = "msgbus.system.reply"
+	msg.ID = fmt.Sprintf("%d.%d", dst, id)
 
 	c, err := a.resolver.Resolve(dst)
-
 	if err != nil {
 		return errors.Wrap(err, "couldn't get twin ip")
 	}
-	err = update.Sign(a.identity)
+	msg.Epoch = time.Now().Unix()
+	err = msg.Sign(a.identity)
 	if err != nil {
 		return errors.Wrap(err, "couldn't sign message")
 	}
-	err = c.SendRemote(update)
+	err = c.SendRemote(msg)
 
 	if err != nil {
 		return err
 	}
 
-	err = a.backend.PushToBacklog(ctx, msg, update.ID)
+	err = a.backend.PushToBacklog(ctx, msg, msg.ID)
 	if err != nil {
 		return err
 	}
@@ -123,9 +120,17 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 }
 
 func (a *App) handleFromLocal(ctx context.Context, msg Message) error {
-	for _, dst := range msg.TwinDst {
-		if err := a.handleFromLocalItem(ctx, msg, dst); err != nil {
-			log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
+	if len(msg.TwinDst) == 1 {
+		if err := a.handleFromLocalItem(ctx, msg); err != nil {
+			log.Error().Err(err).Msg("failed to handle item from local queue")
+		}
+	} else if len(msg.TwinDst) > 1 {
+		for _, dst := range msg.TwinDst {
+			update := msg
+			update.TwinDst = []int{dst}
+			if err := a.backend.QueueLocal(ctx, update); err != nil {
+				log.Error().Err(err).Msg("failed to handle message in handle_from_local_prepare")
+			}
 		}
 	}
 	return nil
@@ -213,10 +218,9 @@ func (a *App) handleRetry(ctx context.Context) error {
 	for _, entry := range entries {
 		log.Debug().Str("key", entry.ID).Msg("retry needed")
 
-		err := a.handleFromLocalItem(ctx, entry, entry.TwinDst[0])
+		err := a.backend.QueueLocal(ctx, entry)
 		if err != nil {
-			// just log the error, repushing to retry queue happens inside handleFromLocalItem
-			log.Warn().Err(err).Msg("error handling message in retry queue")
+			log.Warn().Err(err).Msg("error requeueing retry")
 		}
 	}
 	return nil
@@ -232,7 +236,7 @@ func (a *App) handleScrubbing(ctx context.Context) error {
 	// iterate over each entries
 	for _, entry := range entries {
 		log.Debug().Str("key", entry.ID).Msg("expired")
-		if repErr := a.respondWithError(ctx, entry, fmt.Errorf("request timeout (expiration reached, %d)", entry.Expiration)); repErr != nil {
+		if repErr := a.respondWithError(ctx, entry, fmt.Errorf("request timeout (expiration reached, send date: %s, now: %s, expiration: %d)", time.Unix(entry.Epoch, 0).String(), time.Now().String(), entry.Expiration)); repErr != nil {
 			log.Error().Err(repErr).Msg("error responding to rmb called with error")
 			log.Error().Err(err).Msg("original error")
 		}
