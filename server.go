@@ -296,11 +296,11 @@ func (a *App) runServer(ctx context.Context) {
 			continue
 		}
 
-select{
-    case <-ctx.Done():
-         return
-    case ch <- envelope:
-}    
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- envelope:
+		}
 	}
 }
 
@@ -398,15 +398,11 @@ func (a *App) Serve(root context.Context) error {
 	return nil
 }
 
-func NewServer(substrate string, redisServer string, twin int, workers int) (*App, error) {
+func NewServer(resolver TwinResolver, backend RedisBackend, twin int, workers int) (*App, error) {
 	router := mux.NewRouter()
-	backend := NewRedisBackend(redisServer)
-	resolver, err := NewSubstrateResolver(substrate)
-	if err != nil {
-		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
-	}
+
 	a := &App{
-		backend:  backend,
+		backend:  &backend,
 		twin:     twin,
 		resolver: NewCacheResolver(resolver, 5*time.Minute),
 		server: &http.Server{

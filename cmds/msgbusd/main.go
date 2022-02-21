@@ -17,11 +17,13 @@ import (
 )
 
 type flags struct {
-	twin      int
-	substrate string
-	debug     string
-	redis     string
-	workers   int
+	twin        int
+	substrate   string
+	debug       string
+	redis       string
+	workers     int
+	localConfig string
+	publish     bool
 }
 
 func (f *flags) Valid() error {
@@ -31,29 +33,49 @@ func (f *flags) Valid() error {
 	return nil
 }
 
+var Flags *flags
+
 func main() {
-	var f flags
-	flag.IntVar(&f.twin, "twin", -1, "the twin id")
-	flag.StringVar(&f.substrate, "substrate", "wss://tfchain.grid.tf", "substrate url")
-	flag.StringVar(&f.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
-	flag.StringVar(&f.redis, "redis", "127.0.0.1:6379", "redis url")
-	flag.IntVar(&f.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
+	Flags = &flags{}
+	flag.IntVar(&Flags.twin, "twin", -1, "the twin id")
+	flag.StringVar(&Flags.substrate, "substrate", "wss://tfchain.grid.tf", "substrate url")
+	flag.StringVar(&Flags.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
+	flag.StringVar(&Flags.redis, "redis", "127.0.0.1:6379", "redis url")
+	flag.IntVar(&Flags.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
+	flag.StringVar(&Flags.localConfig, "localconfig", "", "JSON that overrides substrate lookup")
+	flag.BoolVar(&Flags.publish, "publish", false, "Enable publish instead of push on redis")
 	flag.Parse()
 
-	if err := f.Valid(); err != nil {
+	if err := Flags.Valid(); err != nil {
 		flag.PrintDefaults()
 		log.Fatal().Err(err).Msg("invalid arguments")
 	}
 
-	setupLogging(f.debug)
+	setupLogging(Flags.debug)
+	log.Debug().Bool("flags", Flags.publish).Msg("huts")
 
-	if err := app(f); err != nil {
+	if err := app(); err != nil {
 		log.Fatal().Msg(err.Error())
 	}
 }
 
-func app(f flags) error {
-	s, err := rmb.NewServer(f.substrate, f.redis, f.twin, f.workers)
+func app() error {
+	backend := rmb.NewRedisBackend(Flags.redis, Flags.publish)
+	var res rmb.TwinResolver
+	var err error
+
+	if Flags.localConfig == "" {
+		res, err = rmb.NewSubstrateResolver(Flags.substrate)
+	} else {
+		res, err = rmb.NewLocalTwinResolver(Flags.localConfig)
+	}
+
+	if err != nil {
+		return errors.Wrap(err, "couldn't get a client to explorer resolver")
+	}
+
+	s, err := rmb.NewServer(res, *backend, Flags.twin, Flags.workers)
+
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
 	}

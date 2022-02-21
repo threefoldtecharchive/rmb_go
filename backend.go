@@ -57,18 +57,33 @@ type Backend interface {
 
 type RedisBackend struct {
 	// looks like it's implemented as a pool
-	client *redis.Client
+	client  *redis.Client
+	publish bool
 }
 
-func NewRedisBackend(redisServer string) *RedisBackend {
+func (r *RedisBackend) PushMessage(ctx context.Context, queue string, bytes []byte) error {
+	var err error
+	log.Debug().Bool("tada", r.publish).Msg("huts2")
+	if r.publish {
+		log.Debug().Msg("Here")
+		_, err = r.client.Publish(ctx, queue, bytes).Result()
+	} else {
+		_, err = r.client.LPush(ctx, queue, bytes).Result()
+	}
+	return err
+}
+
+func NewRedisBackend(redisServer string, publish bool) *RedisBackend {
 	return &RedisBackend{
 		client: redis.NewClient(&redis.Options{
 			Addr:     redisServer,
 			Password: "", // no password set
 			DB:       0,  // use default DB
 		}),
+		publish: publish,
 	}
 }
+
 func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelope, error) {
 	res, err := r.client.BLPop(ctx, timeout, "msgbus.system.local", "msgbus.system.remote", "msgbus.system.reply").Result()
 
@@ -93,7 +108,7 @@ func (r *RedisBackend) QueueReply(ctx context.Context, msg Message) error {
 		return errors.Wrap(err, "failed to encode into json")
 	}
 
-	_, err = r.client.LPush(ctx, "msgbus.system.reply", bytes).Result()
+	err = r.PushMessage(ctx, "msgbus.system.reply", bytes)
 	if err != nil {
 		return err
 	}
@@ -186,7 +201,9 @@ func (r *RedisBackend) QueueCommand(ctx context.Context, msg Message) error {
 		return errors.Wrap(err, "failed to encode into json")
 	}
 
-	_, err = r.client.LPush(ctx, fmt.Sprintf("msgbus.%s", msg.Command), bytes).Result()
+	//err = r.PushMessage(ctx, fmt.Sprintf("msgbus.%s", msg.Command), bytes)
+	log.Debug().Msg("Joat")
+	_, err = r.client.Publish(ctx, fmt.Sprintf("msgbus.%s", msg.Command), bytes).Result()
 	return err
 }
 
@@ -196,7 +213,7 @@ func (r *RedisBackend) PushProcessedMessage(ctx context.Context, msg Message) er
 		return errors.Wrap(err, "failed to encode into json")
 	}
 
-	_, err = r.client.LPush(ctx, msg.Retqueue, bytes).Result()
+	err = r.PushMessage(ctx, msg.Retqueue, bytes)
 	if err != nil {
 		return errors.Wrap(err, "can't push message to redis")
 	}
