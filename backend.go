@@ -82,6 +82,7 @@ func (r *RedisBackend) Next(ctx context.Context, timeout time.Duration) (Envelop
 	if err := json.Unmarshal([]byte(res[1]), &envelope); err != nil {
 		return envelope, err
 	}
+	log.Debug().Object("enveloppe", env)
 	log.Debug().Str("queue", string(res[0])).Msg("received a message on a queue")
 	envelope.Tag = tagsMap[res[0]]
 	return envelope, nil
