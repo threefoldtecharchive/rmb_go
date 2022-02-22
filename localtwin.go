@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+  "io/ioutil"
 	"net/http"
 	"time"
+  "os"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -26,13 +28,27 @@ type LocalTwinResolver struct {
 	data []TwinLocation
 }
 
-func NewLocalTwinResolver(config string) (TwinResolver, error) {
-	log.Debug().Str("config", config).Msg("Local config")
+func NewLocalTwinResolver() (TwinResolver, error) {
 	jsonResult := TwinLocationData{}
+
+  // call local api andpoint
+  response, err := http.Get("http://localhost:3000/nest/locations")
+  if err != nil {
+    fmt.Print(err.Error()) // print error
+    os.Exit(1) // exit gracefully
+  }
+
+
+  config, err := ioutil.ReadAll(response.Body)
+  if err != nil {
+    log.Fatal()
+  }
+
 	if err := json.Unmarshal([]byte(config), &jsonResult); err != nil {
 		return nil, err
 	}
 
+    fmt.Println(jsonResult)
 	return &LocalTwinResolver{
 		data: jsonResult.Data,
 	}, nil

@@ -22,7 +22,7 @@ type flags struct {
 	debug       string
 	redis       string
 	workers     int
-	localConfig string
+	localConfig bool
 	publish     bool
 }
 
@@ -42,7 +42,7 @@ func main() {
 	flag.StringVar(&Flags.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
 	flag.StringVar(&Flags.redis, "redis", "127.0.0.1:6379", "redis url")
 	flag.IntVar(&Flags.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
-	flag.StringVar(&Flags.localConfig, "localconfig", "", "JSON that overrides substrate lookup")
+	flag.BoolVar(&Flags.localConfig, "localconfig", true, "Local endpoint that overrides substrate lookup")
 	flag.BoolVar(&Flags.publish, "publish", false, "Enable publish instead of push on redis")
 	flag.Parse()
 
@@ -64,10 +64,10 @@ func app() error {
 	var res rmb.TwinResolver
 	var err error
 
-	if Flags.localConfig == "" {
-		res, err = rmb.NewSubstrateResolver(Flags.substrate)
+	if Flags.localConfig {
+		res, err = rmb.NewLocalTwinResolver()
 	} else {
-		res, err = rmb.NewLocalTwinResolver(Flags.localConfig)
+		res, err = rmb.NewSubstrateResolver(Flags.substrate)
 	}
 
 	if err != nil {
