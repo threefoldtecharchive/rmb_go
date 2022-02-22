@@ -14,21 +14,23 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/go-rmb"
+	"github.com/threefoldtech/substrate-client"
 )
 
 type flags struct {
-	twin        int
-	substrate   string
-	debug       string
-	redis       string
-	workers     int
 	localConfig bool
-	publish     bool
+  substrate string
+	debug     string
+	redis     string
+	mnemonics string
+	key_type  string
+	workers   int
+  publish bool
 }
 
 func (f *flags) Valid() error {
-	if f.twin == -1 {
-		return fmt.Errorf("twin id is required")
+	if f.mnemonics == "" {
+		return fmt.Errorf("mnemonics id is required")
 	}
 	return nil
 }
@@ -36,14 +38,15 @@ func (f *flags) Valid() error {
 var Flags *flags
 
 func main() {
-	Flags = &flags{}
-	flag.IntVar(&Flags.twin, "twin", -1, "the twin id")
-	flag.StringVar(&Flags.substrate, "substrate", "wss://tfchain.grid.tf", "substrate url")
-	flag.StringVar(&Flags.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
-	flag.StringVar(&Flags.redis, "redis", "127.0.0.1:6379", "redis url")
-	flag.IntVar(&Flags.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
-	flag.BoolVar(&Flags.localConfig, "localconfig", true, "Local endpoint that overrides substrate lookup")
+	var f flags
+	flag.StringVar(&f.substrate, "substrate", "wss://tfchain.grid.tf", "substrate url")
+	flag.StringVar(&f.debug, "log-level", "info", "log level [debug|info|warn|error|fatal|panic]")
+	flag.StringVar(&f.mnemonics, "mnemonics", "", "mnemonics")
+	flag.StringVar(&f.key_type, "key-type", "sr25519", "key type")
+	flag.IntVar(&f.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
+  flag.BoolVar(&Flags.localConfig, "localconfig", true, "Local endpoint that overrides substrate lookup")
 	flag.BoolVar(&Flags.publish, "publish", false, "Enable publish instead of push on redis")
+
 	flag.Parse()
 
 	if err := Flags.Valid(); err != nil {
@@ -59,8 +62,23 @@ func main() {
 	}
 }
 
+
+func constructSigner(mnemonics string, key_type string) (substrate.Identity, error) {
+	if key_type == "ed25519" {
+		return substrate.NewIdentityFromEd25519Phrase(mnemonics)
+	} else if key_type == "sr25519" {
+		return substrate.NewIdentityFromSr25519Phrase(mnemonics)
+	} else {
+		return nil, fmt.Errorf("unrecognized key type %s", key_type)
+	}
+}
+
 func app() error {
-	backend := rmb.NewRedisBackend(Flags.redis, Flags.publish)
+	identity, err := constructSigner(f.mnemonics, f.key_type)
+	if err != nil {
+		return err
+	}
+  backend := rmb.NewRedisBackend(Flags.redis, Flags.publish)
 	var res rmb.TwinResolver
 	var err error
 
@@ -73,8 +91,8 @@ func app() error {
 	if err != nil {
 		return errors.Wrap(err, "couldn't get a client to explorer resolver")
 	}
-
-	s, err := rmb.NewServer(res, *backend, Flags.twin, Flags.workers)
+  
+	s, err := rmb.NewServer(res, *backend, Flags.workers, identity)
 
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
