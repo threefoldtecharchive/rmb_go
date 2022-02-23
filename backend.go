@@ -34,6 +34,7 @@ type Envelope struct {
 	Message
 	Tag Tag
 }
+
 type Backend interface {
 	Next(ctx context.Context, timeout time.Duration) (Envelope, error)
 	QueueReply(ctx context.Context, msg Message) error // method name

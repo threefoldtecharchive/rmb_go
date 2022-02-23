@@ -54,6 +54,11 @@ func NewLocalTwinResolver() (TwinResolver, error) {
 	}, nil
 }
 
+
+func (twinLocationResolver *LocalTwinResolver) PublicKey(twin int) ([]byte, error) {
+  return nil, nil
+}
+
 func (twinLocationResolver *LocalTwinResolver) Resolve(twin int) (TwinClient, error) {
 	var data *TwinLocation
 	for _, v := range twinLocationResolver.data {

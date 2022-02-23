@@ -19,23 +19,21 @@ import (
 
 type flags struct {
 	localConfig bool
+  publish bool
   substrate string
 	debug     string
 	redis     string
 	mnemonics string
 	key_type  string
 	workers   int
-  publish bool
 }
 
 func (f *flags) Valid() error {
-	if f.mnemonics == "" {
+	if f.mnemonics == "" && f.debug == "" {
 		return fmt.Errorf("mnemonics id is required")
 	}
 	return nil
 }
-
-var Flags *flags
 
 func main() {
 	var f flags
@@ -44,20 +42,20 @@ func main() {
 	flag.StringVar(&f.mnemonics, "mnemonics", "", "mnemonics")
 	flag.StringVar(&f.key_type, "key-type", "sr25519", "key type")
 	flag.IntVar(&f.workers, "workers", 1000, "workers is number of active channels that communicate with the backend")
-  flag.BoolVar(&Flags.localConfig, "localconfig", true, "Local endpoint that overrides substrate lookup")
-	flag.BoolVar(&Flags.publish, "publish", false, "Enable publish instead of push on redis")
+  flag.BoolVar(&f.localConfig, "localconfig", true, "Local endpoint that overrides substrate lookup")
+	flag.BoolVar(&f.publish, "publish", false, "Enable publish instead of push on redis")
 
 	flag.Parse()
 
-	if err := Flags.Valid(); err != nil {
+	if err := f.Valid(); err != nil {
 		flag.PrintDefaults()
 		log.Fatal().Err(err).Msg("invalid arguments")
 	}
 
-	setupLogging(Flags.debug)
-	log.Debug().Bool("flags", Flags.publish).Msg("huts")
+	setupLogging(f.debug)
+	log.Debug().Bool("flags", f.publish).Msg("huts")
 
-	if err := app(); err != nil {
+	if err := app(f); err != nil {
 		log.Fatal().Msg(err.Error())
 	}
 }
@@ -73,27 +71,13 @@ func constructSigner(mnemonics string, key_type string) (substrate.Identity, err
 	}
 }
 
-func app() error {
+func app(f flags) error {
 	identity, err := constructSigner(f.mnemonics, f.key_type)
 	if err != nil {
 		return err
 	}
-  backend := rmb.NewRedisBackend(Flags.redis, Flags.publish)
-	var res rmb.TwinResolver
-	var err error
 
-	if Flags.localConfig {
-		res, err = rmb.NewLocalTwinResolver()
-	} else {
-		res, err = rmb.NewSubstrateResolver(Flags.substrate)
-	}
-
-	if err != nil {
-		return errors.Wrap(err, "couldn't get a client to explorer resolver")
-	}
-  
-	s, err := rmb.NewServer(res, *backend, Flags.workers, identity)
-
+  s, err := rmb.NewServer(f.substrate, f.redis, f.workers, identity, f.localConfig, f.publish)
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
 	}

@@ -474,9 +474,10 @@ func (a *App) Serve(root context.Context) error {
 }
 
 
-func NewServer(resolver TwinResolver, backend RedisBackend, workers int, identity substrate.Identity) (*App, error) {
+func NewServer(substrateURL string, redisServer string, workers int, identity substrate.Identity, localConfig bool, publish bool) (*App, error) {
 	router := mux.NewRouter()
-	backend := NewRedisBackend(redisServer)
+
+  backend := NewRedisBackend(redisServer, publish)
 	sub, err := substrate.NewSubstrate(substrateURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get substrate client")
@@ -485,16 +486,19 @@ func NewServer(resolver TwinResolver, backend RedisBackend, workers int, identit
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get twin associated with mnemonics")
 	}
-	resolver, err := NewSubstrateResolver(sub)
-	if err != nil {
-		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
-	}
+
+  var res TwinResolver
+	if localConfig {
+    res, err = NewLocalTwinResolver()
+	} else {
+    res, err = NewSubstrateResolver(sub)
+  }
 
 	a := &App{
 		backend:  backend,
 		identity: identity,
 		twin:     int(twin),
-		resolver: NewCacheResolver(resolver, 5*time.Minute),
+		resolver: NewCacheResolver(res, 5*time.Minute),
 		server: &http.Server{
 			Handler: router,
 			Addr:    "0.0.0.0:8051",
