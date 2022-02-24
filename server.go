@@ -449,18 +449,21 @@ func (a *App) Serve(root context.Context) error {
 	return nil
 }
 
-func NewServer(substrateURL string, redisServer string, workers int, identity substrate.Identity) (*App, error) {
+func NewServer(mgr substrate.Manager, redisServer string, workers int, identity substrate.Identity) (*App, error) {
 	router := mux.NewRouter()
 	backend := NewRedisBackend(redisServer)
-	sub, err := substrate.NewSubstrate(substrateURL)
+
+	sub, err := mgr.Substrate()
 	if err != nil {
-		return nil, errors.Wrap(err, "couldn't get substrate client")
+		return nil, errors.Wrap(err, "failed to connect to substrate")
 	}
+	defer sub.Close()
+
 	twin, err := sub.GetTwinByPubKey(identity.PublicKey())
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get twin associated with mnemonics")
 	}
-	resolver, err := NewSubstrateResolver(sub)
+	resolver, err := NewSubstrateResolver(mgr)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
 	}

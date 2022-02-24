@@ -69,7 +69,8 @@ func app(f flags) error {
 	if err != nil {
 		return err
 	}
-	s, err := rmb.NewServer(f.substrate, f.redis, f.workers, identity)
+
+	s, err := rmb.NewServer(substrate.NewManager(f.substrate), f.redis, f.workers, identity)
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
 	}

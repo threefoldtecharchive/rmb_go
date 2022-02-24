@@ -38,7 +38,13 @@ func (k Sr25519VerifyingKey) verify(pub sr25519.PublicKey, msg []byte, signature
 	if err := sig.Decode(sigs); err != nil {
 		return false
 	}
-	return pub.Verify(sig, signingContext(msg))
+	ok, err := pub.Verify(sig, signingContext(msg))
+	if err != nil {
+		log.Error().Err(err).Msg("failed to verify signature")
+		return false
+	}
+
+	return ok
 }
 
 func (k Sr25519VerifyingKey) pubKey() (*sr25519.PublicKey, error) {

@@ -30,7 +30,7 @@ type cacheResolver struct {
 }
 
 type substrateResolver struct {
-	client *substrate.Substrate
+	client substrate.Manager
 }
 
 type twinClient struct {
@@ -86,8 +86,7 @@ func (c *cacheResolver) PublicKey(twin int) ([]byte, error) {
 	return pk, nil
 }
 
-func NewSubstrateResolver(client *substrate.Substrate) (TwinResolver, error) {
-
+func NewSubstrateResolver(client substrate.Manager) (TwinResolver, error) {
 	return &substrateResolver{
 		client: client,
 	}, nil
@@ -95,8 +94,12 @@ func NewSubstrateResolver(client *substrate.Substrate) (TwinResolver, error) {
 
 func (r substrateResolver) Resolve(timeID int) (TwinClient, error) {
 	log.Debug().Int("twin", timeID).Msg("resolving twin")
-
-	twin, err := r.client.GetTwin(uint32(timeID))
+	client, err := r.client.Substrate()
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	twin, err := client.GetTwin(uint32(timeID))
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +113,13 @@ func (r substrateResolver) Resolve(timeID int) (TwinClient, error) {
 func (r substrateResolver) PublicKey(twinID int) ([]byte, error) {
 	log.Debug().Int("twin", twinID).Msg("resolving twin")
 
-	twin, err := r.client.GetTwin(uint32(twinID))
+	client, err := r.client.Substrate()
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	twin, err := client.GetTwin(uint32(twinID))
 	if err != nil {
 		return nil, err
 	}
