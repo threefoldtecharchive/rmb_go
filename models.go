@@ -64,10 +64,14 @@ func (m *Message) Sign(s substrate.Identity) error {
 	return nil
 }
 
-func (m *Message) Verify(publicKey []byte) error {
-	if time.Since(time.Unix(m.Epoch, 0)) > 20*time.Second {
+func (m *Message) ValidateEpoch() error {
+	if time.Since(time.Unix(m.Epoch, 0)) > 60*time.Second {
 		return fmt.Errorf("message is too old, sent since %s, sent time: %d, now: %d", time.Since(time.Unix(m.Epoch, 0)).String(), m.Epoch, time.Now().Unix())
 	}
+	return nil
+}
+
+func (m *Message) Verify(publicKey []byte) error {
 	if m.Signature == "" {
 		return errors.New("signature field is empty, visit the project github repo for instructions to update")
 	}

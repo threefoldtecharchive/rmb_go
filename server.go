@@ -105,6 +105,9 @@ func (a *App) handleFromLocalItem(ctx context.Context, msg Message, dst int) err
 	if err != nil {
 		return errors.Wrap(err, "couldn't get twin ip")
 	}
+	// time is set here to minimize the interval on which the signature is checked
+	// it's set before for checking when the messages expires when pushed to the backlog
+	update.Epoch = time.Now().Unix()
 	err = update.Sign(a.identity)
 	if err != nil {
 		return errors.Wrap(err, "couldn't sign message")
@@ -174,7 +177,7 @@ func (a *App) handleFromReplyForward(ctx context.Context, msg Message) error {
 	if err != nil {
 		return errors.Wrap(err, "couldn't resolve twin ip")
 	}
-
+	msg.Epoch = time.Now().Unix()
 	err = msg.Sign(a.identity)
 	if err != nil {
 		return errors.Wrap(err, "couldn't sign reply message")
@@ -323,7 +326,10 @@ func (a *App) remote(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
 		return
 	}
-
+	if err := msg.ValidateEpoch(); err != nil {
+		errorReply(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	pk, err := a.resolver.PublicKey(msg.TwinSrc)
 	if errors.Is(err, substrate.ErrNotFound) {
 		errorReply(w, http.StatusBadRequest, "source twin %d not found", msg.TwinSrc)
@@ -352,6 +358,11 @@ func (a *App) reply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := msg.ValidateEpoch(); err != nil {
+		errorReply(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	pk, err := a.resolver.PublicKey(msg.TwinSrc)
 	if errors.Is(err, substrate.ErrNotFound) {
 		errorReply(w, http.StatusBadRequest, "source twin %d not found", msg.TwinSrc)
@@ -377,6 +388,11 @@ func (a *App) run(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		errorReply(w, http.StatusBadRequest, "couldn't parse json")
+		return
+	}
+
+	if err := msg.ValidateEpoch(); err != nil {
+		errorReply(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -425,6 +441,14 @@ func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errorReply(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	for idx := range response {
+		response[idx].Epoch = time.Now().Unix()
+		if err := response[idx].Sign(a.identity); err != nil {
+			log.Error().Err(err).Msg("failed to sign reply")
+			errorReply(w, http.StatusInternalServerError, "signing failed")
+			return
+		}
 	}
 	json.NewEncoder(w).Encode(&response)
 }
