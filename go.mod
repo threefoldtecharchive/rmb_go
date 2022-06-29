@@ -14,9 +14,8 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.26.0
 	github.com/stretchr/testify v1.7.0
-	github.com/threefoldtech/substrate-client v0.0.0-20220224131248-f56a2e9fa1d4
-	golang.org/x/text v0.3.7-0.20210503195748-5c7c50ebbd4f // indirect
+	github.com/threefoldtech/substrate-client v0.0.0-20220629072807-544d41e5b81a
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/centrifuge/go-substrate-rpc-client/v4 v4.0.0 => github.com/threefoldtech/go-substrate-rpc-client/v4 v4.0.1-0.20220224103912-af82b63a1bda
+replace github.com/centrifuge/go-substrate-rpc-client/v4 v4.0.2 => github.com/threefoldtech/go-substrate-rpc-client/v4 v4.0.3-0.20220629062423-919d421680f4
