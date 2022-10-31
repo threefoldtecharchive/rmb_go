@@ -453,10 +453,17 @@ func (a *App) getResult(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(&response)
 }
 
-func (a *App) Serve(root context.Context) error {
+func (a *App) Serve(root context.Context, mgr substrate.Manager) error {
 	ctx, cancel := context.WithCancel(root)
 	defer cancel()
 
+	sub, err := mgr.Substrate()
+	if err != nil {
+		return err
+	}
+	defer sub.Close()
+	resolver, err := NewSubstrateResolver(sub)
+	a.resolver = NewCacheResolver(resolver, 5*time.Minute)
 	go a.runServer(ctx)
 
 	go func() {
@@ -487,16 +494,11 @@ func NewServer(mgr substrate.Manager, redisServer string, workers int, identity 
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't get twin associated with mnemonics")
 	}
-	resolver, err := NewSubstrateResolver(mgr)
-	if err != nil {
-		return nil, errors.Wrap(err, "couldn't get a client to explorer resolver")
-	}
 
 	a := &App{
 		backend:  backend,
 		identity: identity,
 		twin:     int(twin),
-		resolver: NewCacheResolver(resolver, 5*time.Minute),
 		server: &http.Server{
 			Handler: router,
 			Addr:    "0.0.0.0:8051",
