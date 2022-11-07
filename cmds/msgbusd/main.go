@@ -69,8 +69,8 @@ func app(f flags) error {
 	if err != nil {
 		return err
 	}
-
-	s, err := rmb.NewServer(substrate.NewManager(f.substrate), f.redis, f.workers, identity)
+	mgr := substrate.NewManager(f.substrate)
+	s, err := rmb.NewServer(mgr, f.redis, f.workers, identity)
 	if err != nil {
 		return errors.Wrap(err, "failed to create server")
 	}
@@ -87,7 +87,7 @@ func app(f flags) error {
 		cancel()
 	}()
 
-	if err := s.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	if err := s.Serve(ctx, mgr); err != nil && !errors.Is(err, context.Canceled) {
 		return errors.Wrap(err, "server exited unexpectedly")
 	}
 
