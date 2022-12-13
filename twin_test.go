@@ -5,10 +5,17 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog/log"
+	"github.com/threefoldtech/substrate-client"
 )
 
 func TestResolveTwinIP(t *testing.T) {
-	resolver, err := NewTwinResolver("wss://explorer.devnet.grid.tf/ws")
+	mgr := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
+	sub, err := mgr.Substrate()
+	if err != nil {
+		t.Errorf("error opening substrate connection: %v", err)
+	}
+	defer sub.Close()
+	resolver, err := NewSubstrateResolver(sub)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -16,15 +23,21 @@ func TestResolveTwinIP(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if r.(*twinClient).dstIP != "202:6df5:9559:4c41:fa57:b09f:6e:ee0f" {
-		t.Errorf("expected 202:6df5:9559:4c41:fa57:b09f:6e:ee0f found %s", r.(*twinClient).dstIP)
+	if r.(*twinClient).dstIP != "::11" {
+		t.Errorf("expected ::11 found %s", r.(*twinClient).dstIP)
 	}
 }
 
 func TestResolveFail(t *testing.T) {
-	resolver, err := NewTwinResolver("wss://explorer.devnet.grid.tf/ws")
+	mgr := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
+	sub, err := mgr.Substrate()
 	if err != nil {
-		t.Errorf("couldn't retrieve resolver")
+		t.Errorf("error opening substrate connection: %v", err)
+	}
+	defer sub.Close()
+	resolver, err := NewSubstrateResolver(sub)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 	r, err := resolver.Resolve(9845856)
 	log.Debug().Err(err).Str("result", fmt.Sprintf("%v", r)).Msg("after requesting non-existent twin")

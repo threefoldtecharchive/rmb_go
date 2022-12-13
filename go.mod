@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/ChainSafe/go-schnorrkel v1.0.0
 	github.com/go-redis/redis/v8 v8.11.1
+	github.com/golang/mock v1.3.1
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gtank/merlin v0.1.1
