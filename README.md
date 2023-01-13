@@ -1,3 +1,5 @@
+> ARCHIVED: in favor of [rmb-rs](https://github.com/threefoldtech/rmb-rs)
+
 # Reliable Message Bus Protocol
 
 ## Server
