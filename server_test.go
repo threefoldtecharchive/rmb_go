@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -206,20 +207,24 @@ func (c *TwinClientMock) PopReply() Message {
 	c.reply = c.reply[:len(c.reply)-1]
 	return last
 }
-func setup() (a App, s BackendMock, r ResolverMock) {
-	backend := NewBackendMock()
-	resolver := NewResolverMock()
+func setup(ctrl *gomock.Controller) (a App, s Backend, r TwinResolver) {
+	// backend := NewBackendMock()
+	// resolver := NewResolverMock()
+
+	backend := NewMockBackend(ctrl)
+	resolver := NewMockTwinResolver(ctrl)
 	app := App{
 		backend:  backend,
 		twin:     1,
 		resolver: resolver,
 	}
 
-	return app, *backend, resolver
+	return app, backend, resolver
 }
 
 func TestHandleFromLocalPrepareItem(t *testing.T) {
-	app, _, resolver := setup()
+	ctrl := gomock.NewController(t)
+	app, _, resolver := setup(ctrl)
 	secondTwin, _ := resolver.Resolve(2)
 	secondTwinMock := secondTwin.(*TwinClientMock)
 	msg := Message{
@@ -250,7 +255,8 @@ func TestHandleFromLocalPrepareItem(t *testing.T) {
 }
 
 func TestHandleFromLocal(t *testing.T) {
-	app, _, resolver := setup()
+	ctrl := gomock.NewController(t)
+	app, _, resolver := setup(ctrl)
 	secondTwin, _ := resolver.Resolve(2)
 	secondTwinMock := secondTwin.(*TwinClientMock)
 	fourthTwin, _ := resolver.Resolve(4)
@@ -288,7 +294,8 @@ func TestHandleFromLocal(t *testing.T) {
 }
 
 func TestHandleFromRemote(t *testing.T) {
-	app, backend, _ := setup()
+	ctrl := gomock.NewController(t)
+	app, backend, _ := setup(ctrl)
 	msg := Message{
 		Version:    1,
 		ID:         "",
@@ -327,8 +334,8 @@ func TestHandleFromReplyForMe(t *testing.T) {
 			 * 4. the reply message is pushed to this reply queue
 			 * 5. the message is deleted from the backlog
 	*/
-
-	app, backend, _ := setup()
+	ctrl := gomock.NewController(t)
+	app, backend, _ := setup(ctrl)
 	msg := Message{
 		Version:    1,
 		ID:         "9.7",
@@ -346,6 +353,7 @@ func TestHandleFromReplyForMe(t *testing.T) {
 	update := msg
 	update.Retqueue = "msgbug.system.reply"
 	update.Data = base64.StdEncoding.EncodeToString([]byte("result"))
+
 	backend.PushToBacklog(context.TODO(), msg, msg.ID)
 	err := app.handleFromReplyForMe(context.TODO(), update)
 	if err != nil {

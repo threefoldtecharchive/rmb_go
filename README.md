@@ -14,19 +14,17 @@ To run `msgbusd` (msgbus daemon) which is the server (aka agent) running to proc
 the following:
 
 ```bash
-msgbusd --twin <twin-id>
+msgbusd --substrate <substrate-url> --menmonics <mnemonics>
 ```
 
 More options are available:
 
 ```
-  --redis [redis-endpoint]
-  --substrate [substrate-http]
+  --log-level [log level [debug|info|warn|error|fatal|panic]]
+  --key-type  [key type]
+  --workers   [workers is number of active channels that communicate with the backend]
 ```
 
-- The `twin-id` is mendatory and will be used to identify messagebus identifier
-- The redis address can be used to specify a running redis server, it can be an address
-  (e.g. `127.0.0.1:6379`, this is the default value) or a unix socket (e.g. `/var/run/redis.sock`)
 - The substrate argument should be a valid http webservice made to query substrate db
 
 ## Run systemd service
@@ -43,7 +41,7 @@ More options are available:
   After=redis-server.service
 
   [Service]
-  ExecStart=msgbusd --twin <twin-id> [options]
+  ExecStart=msgbusd --substrate <substrate-url> --mnemonics <mnemonics> [options]
   Type=simple
   Restart=always
   User=<user>
